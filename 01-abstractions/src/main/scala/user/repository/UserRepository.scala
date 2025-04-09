@@ -2,7 +2,7 @@ package user.repository
 
 import user.models.User
 import zio.*
-
+import user.models.UserId
 trait UserRepository:
   def findById(id: UserId): Task[Option[User]]
   def findByEmail(email: String): Task[Option[User]]

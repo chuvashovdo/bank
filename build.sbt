@@ -16,10 +16,7 @@ lazy val root =
   project
     .in(file("."))
     .aggregate(
-      authAbstractions,
-      userAbstractions,
-      databaseAbstractions,
-      jwtAbstractions,
+      abstractions,
       authService,
       userService,
       databaseService,
@@ -27,63 +24,9 @@ lazy val root =
       main,
     )
 
-lazy val authAbstractions =
+lazy val abstractions =
   project
-    .in(file("01-abstractions/auth-service"))
-    .settings(
-      commonSettings,
-      autoImportSettings,
-      libraryDependencies ++= Seq(
-        "dev.zio" %% "zio" % "2.0.19",
-        "dev.zio" %% "zio-json" % "0.6.2",
-      ),
-      libraryDependencies ++= Seq(
-        "org.scalacheck" %% "scalacheck" % "1.17.0",
-        "org.scalameta" %% "munit-scalacheck" % "0.7.29",
-        "org.scalameta" %% "munit" % "0.7.29",
-        "org.typelevel" %% "discipline-munit" % "2.0.0",
-      ).map(_ % Test),
-    )
-
-lazy val userAbstractions =
-  project
-    .in(file("01-abstractions/user-service"))
-    .settings(
-      commonSettings,
-      autoImportSettings,
-      libraryDependencies ++= Seq(
-        "dev.zio" %% "zio" % "2.0.19",
-        "dev.zio" %% "zio-json" % "0.6.2",
-      ),
-      libraryDependencies ++= Seq(
-        "org.scalacheck" %% "scalacheck" % "1.17.0",
-        "org.scalameta" %% "munit-scalacheck" % "0.7.29",
-        "org.scalameta" %% "munit" % "0.7.29",
-        "org.typelevel" %% "discipline-munit" % "2.0.0",
-      ).map(_ % Test),
-    )
-
-lazy val databaseAbstractions =
-  project
-    .in(file("01-abstractions/database-service"))
-    .settings(
-      commonSettings,
-      autoImportSettings,
-      libraryDependencies ++= Seq(
-        "dev.zio" %% "zio" % "2.0.19",
-        "dev.zio" %% "zio-json" % "0.6.2",
-      ),
-      libraryDependencies ++= Seq(
-        "org.scalacheck" %% "scalacheck" % "1.17.0",
-        "org.scalameta" %% "munit-scalacheck" % "0.7.29",
-        "org.scalameta" %% "munit" % "0.7.29",
-        "org.typelevel" %% "discipline-munit" % "2.0.0",
-      ).map(_ % Test),
-    )
-
-lazy val jwtAbstractions =
-  project
-    .in(file("01-abstractions/jwt-service"))
+    .in(file("01-abstractions"))
     .settings(
       commonSettings,
       autoImportSettings,
@@ -102,7 +45,7 @@ lazy val jwtAbstractions =
 lazy val authService =
   project
     .in(file("02-services/auth-service"))
-    .dependsOn(authAbstractions, jwtAbstractions)
+    .dependsOn(abstractions)
     .settings(
       commonSettings,
       autoImportSettings,
@@ -131,7 +74,7 @@ lazy val authService =
 lazy val userService =
   project
     .in(file("02-services/user-service"))
-    .dependsOn(userAbstractions, databaseAbstractions)
+    .dependsOn(abstractions)
     .settings(
       commonSettings,
       autoImportSettings,
@@ -160,7 +103,7 @@ lazy val userService =
 lazy val databaseService =
   project
     .in(file("02-services/database-service"))
-    .dependsOn(databaseAbstractions)
+    .dependsOn(abstractions)
     .settings(
       commonSettings,
       autoImportSettings,
@@ -189,7 +132,7 @@ lazy val databaseService =
 lazy val jwtService =
   project
     .in(file("02-services/jwt-service"))
-    .dependsOn(jwtAbstractions)
+    .dependsOn(abstractions)
     .settings(
       commonSettings,
       autoImportSettings,
@@ -219,10 +162,7 @@ lazy val main =
   project
     .in(file("03-app"))
     .dependsOn(
-      authAbstractions,
-      userAbstractions,
-      databaseAbstractions,
-      jwtAbstractions,
+      abstractions,
       authService,
       userService,
       databaseService,

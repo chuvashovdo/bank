@@ -1,5 +1,8 @@
 package user.entity
 
+import java.time.Instant
+import user.models.UserId
+
 final case class UserEntity(
   id: UserId,
   email: String,
