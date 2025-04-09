@@ -1,4 +1,4 @@
-package user.model
+package user.models
 
 final case class RegisterUserRequest(
   email: String,

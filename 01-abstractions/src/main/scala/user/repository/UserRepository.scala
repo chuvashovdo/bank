@@ -21,24 +21,24 @@ trait UserRepository:
   def deactivate(id: UserId): Task[Unit]
 
 object UserRepository:
-  def findById(id: UserId): ZIO[UserRepository, Throwable, Option[User]] =
+  def findById(id: UserId): RIO[UserRepository, Option[User]] =
     ZIO.serviceWithZIO[UserRepository](_.findById(id))
-  def findByEmail(email: String): ZIO[UserRepository, Throwable, Option[User]] =
+  def findByEmail(email: String): RIO[UserRepository, Option[User]] =
     ZIO.serviceWithZIO[UserRepository](_.findByEmail(email))
   def create(
     email: String,
     passwordHash: String,
     firstName: String,
     lastName: String,
-  ): ZIO[UserRepository, Throwable, User] =
+  ): RIO[UserRepository, User] =
     ZIO.serviceWithZIO[UserRepository](_.create(email, passwordHash, firstName, lastName))
   def update(
     id: UserId,
     firstName: String,
     lastName: String,
-  ): ZIO[UserRepository, Throwable, User] =
+  ): RIO[UserRepository, User] =
     ZIO.serviceWithZIO[UserRepository](_.update(id, firstName, lastName))
-  def updatePassword(id: UserId, passwordHash: String): ZIO[UserRepository, Throwable, Unit] =
+  def updatePassword(id: UserId, passwordHash: String): RIO[UserRepository, Unit] =
     ZIO.serviceWithZIO[UserRepository](_.updatePassword(id, passwordHash))
-  def deactivate(id: UserId): ZIO[UserRepository, Throwable, Unit] =
+  def deactivate(id: UserId): RIO[UserRepository, Unit] =
     ZIO.serviceWithZIO[UserRepository](_.deactivate(id))

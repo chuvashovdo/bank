@@ -1,6 +1,7 @@
 package user.service
 
 import user.models.User
+import user.models.UserId
 import zio.*
 
 trait UserService:
@@ -26,33 +27,33 @@ trait UserService:
   def deactivateUser(id: UserId): Task[Boolean]
 
 object UserService:
-  def findUserById(id: UserId): ZIO[UserService, Throwable, Option[User]] =
+  def findUserById(id: UserId): RIO[UserService, Option[User]] =
     ZIO.serviceWithZIO[UserService](_.findUserById(id))
-  def findUserByEmail(email: String): ZIO[UserService, Throwable, Option[User]] =
+  def findUserByEmail(email: String): RIO[UserService, Option[User]] =
     ZIO.serviceWithZIO[UserService](_.findUserByEmail(email))
   def registerUser(
     email: String,
     password: String,
     firstName: String,
     lastName: String,
-  ): ZIO[UserService, Throwable, User] =
+  ): RIO[UserService, User] =
     ZIO.serviceWithZIO[UserService](_.registerUser(email, password, firstName, lastName))
   def validateCredentials(
     email: String,
     password: String,
-  ): ZIO[UserService, Throwable, Option[User]] =
+  ): RIO[UserService, Option[User]] =
     ZIO.serviceWithZIO[UserService](_.validateCredentials(email, password))
   def updateUser(
     id: UserId,
     firstName: String,
     lastName: String,
-  ): ZIO[UserService, Throwable, User] =
+  ): RIO[UserService, User] =
     ZIO.serviceWithZIO[UserService](_.updateUser(id, firstName, lastName))
   def changePassword(
     id: UserId,
     oldPassword: String,
     newPassword: String,
-  ): ZIO[UserService, Throwable, Boolean] =
+  ): RIO[UserService, Boolean] =
     ZIO.serviceWithZIO[UserService](_.changePassword(id, oldPassword, newPassword))
-  def deactivateUser(id: UserId): ZIO[UserService, Throwable, Boolean] =
+  def deactivateUser(id: UserId): RIO[UserService, Boolean] =
     ZIO.serviceWithZIO[UserService](_.deactivateUser(id))

@@ -2,42 +2,50 @@ package jwt.repository
 
 import jwt.entity.RefreshTokenEntity
 import zio.*
+import io.getquill.*
+import io.getquill.jdbczio.Quill
+import jwt.models.RefreshToken
+import jwt.service.JwtService
+import user.models.UserId
+import java.util.UUID
 
-class TokenRepositoryImpl(quill: Quill.Postgres[SnakeCase]) extends TokenRepository:
+class TokenRepositoryImpl(quill: Quill.Postgres[SnakeCase], jwtService: JwtService)
+    extends TokenRepository:
   import quill.*
 
   inline given tokenSchemaMeta: SchemaMeta[RefreshTokenEntity] =
     schemaMeta("refresh_tokens")
 
   override def saveRefreshToken(refreshToken: RefreshToken): Task[Unit] =
-    val tokenEntity =
-      JwtService.createRefreshTokenEntity(
-        id = UUID.randomUUID().toString,
-        userId = refreshToken.userId,
-        refreshToken = refreshToken.token,
-        expiresAt = refreshToken.expiresAt,
-      )
-    run(quote {
-      query[RefreshTokenEntity].insertValue(lift(tokenEntity))
-    }).unit
+    for
+      tokenEntity <-
+        jwtService.createRefreshTokenEntity(
+          id = UUID.randomUUID().toString,
+          userId = refreshToken.userId,
+          refreshToken = refreshToken.token,
+          expiresAt = refreshToken.expiresAt,
+        )
+      _ <-
+        run(quote {
+          query[RefreshTokenEntity].insertValue(lift(tokenEntity))
+        }).unit
+    yield ()
 
   override def findByRefreshToken(token: String): Task[Option[RefreshToken]] =
     run {
-      quote {
+      quote:
         query[RefreshTokenEntity].filter { t =>
           t.refreshToken == lift(token) &&
-          infix"${t.expiresAt} > ${lift(now)}".as[Boolean]
+          infix"${t.expiresAt} > ${lift(java.time.Instant.now())}".as[Boolean]
         }
-      }
-    }.map {
+    }.map:
       _.headOption.map(entity =>
         RefreshToken(
           token = entity.refreshToken,
           expiresAt = entity.expiresAt,
-          userId = entity.userId,
+          userId = UserId(entity.userId),
         )
       )
-    }
 
   override def deleteByRefreshToken(token: String): Task[Unit] =
     run(quote {
@@ -51,13 +59,16 @@ class TokenRepositoryImpl(quill: Quill.Postgres[SnakeCase]) extends TokenReposit
 
   override def cleanExpiredTokens(): Task[Unit] =
     run(quote {
-      query[RefreshTokenEntity].filter(t => infix"${t.expiresAt} < ${lift(now)}".as[Boolean]).delete
+      query[RefreshTokenEntity]
+        .filter(t => infix"${t.expiresAt} < ${lift(java.time.Instant.now())}".as[Boolean])
+        .delete
     }).unit
 
 object TokenRepositoryImpl:
-  val layer: URLayer[Quill.Postgres[SnakeCase], TokenRepository] =
+  val layer: URLayer[Quill.Postgres[SnakeCase] & JwtService, TokenRepository] =
     ZLayer:
       for
         quill <- ZIO.service[Quill.Postgres[SnakeCase]]
-        impl <- ZIO.succeed(TokenRepositoryImpl(quill))
+        jwtService <- ZIO.service[JwtService]
+        impl <- ZIO.succeed(TokenRepositoryImpl(quill, jwtService))
       yield impl

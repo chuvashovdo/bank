@@ -12,17 +12,17 @@ trait JwtConfig:
   def refreshTokenExpirationMillis: Task[Long]
 
 object JwtConfig:
-  def secretKey: URIO[JwtConfig, String] =
+  def secretKey: RIO[JwtConfig, String] =
     ZIO.serviceWithZIO[JwtConfig](_.secretKey)
-  def accessTokenExpiration: URIO[JwtConfig, Long] =
+  def accessTokenExpiration: RIO[JwtConfig, Long] =
     ZIO.serviceWithZIO[JwtConfig](_.accessTokenExpiration)
-  def refreshTokenExpiration: URIO[JwtConfig, Long] =
+  def refreshTokenExpiration: RIO[JwtConfig, Long] =
     ZIO.serviceWithZIO[JwtConfig](_.refreshTokenExpiration)
-  def issuer: URIO[JwtConfig, String] =
+  def issuer: RIO[JwtConfig, String] =
     ZIO.serviceWithZIO[JwtConfig](_.issuer)
-  def audience: URIO[JwtConfig, String] =
+  def audience: RIO[JwtConfig, String] =
     ZIO.serviceWithZIO[JwtConfig](_.audience)
-  def accessTokenExpirationMillis: URIO[JwtConfig, Long] =
+  def accessTokenExpirationMillis: RIO[JwtConfig, Long] =
     ZIO.serviceWithZIO[JwtConfig](_.accessTokenExpirationMillis)
-  def refreshTokenExpirationMillis: URIO[JwtConfig, Long] =
+  def refreshTokenExpirationMillis: RIO[JwtConfig, Long] =
     ZIO.serviceWithZIO[JwtConfig](_.refreshTokenExpirationMillis)

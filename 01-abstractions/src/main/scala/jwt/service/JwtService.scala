@@ -1,5 +1,11 @@
 package jwt.service
 
+import jwt.models.*
+import user.models.UserId
+import jwt.entity.RefreshTokenEntity
+import java.time.Instant
+import zio.*
+
 trait JwtService:
   def createAccessToken(userId: UserId, issuedAt: Instant): Task[AccessToken]
   def createRefreshToken(userId: UserId, issuedAt: Instant): Task[RefreshToken]
@@ -12,18 +18,18 @@ trait JwtService:
   ): Task[RefreshTokenEntity]
 
 object JwtService:
-  def createAccessToken(userId: UserId): ZIO[JwtService, Nothing, AccessToken] =
-    ZIO.serviceWithZIO[JwtService](_.createAccessToken(userId))
-  def createRefreshToken(userId: UserId): ZIO[JwtService, Nothing, RefreshToken] =
-    ZIO.serviceWithZIO[JwtService](_.createRefreshToken(userId))
-  def validateToken(token: String): ZIO[JwtService, Nothing, UserId] =
+  def createAccessToken(userId: UserId, issuedAt: Instant): RIO[JwtService, AccessToken] =
+    ZIO.serviceWithZIO[JwtService](_.createAccessToken(userId, issuedAt))
+  def createRefreshToken(userId: UserId, issuedAt: Instant): RIO[JwtService, RefreshToken] =
+    ZIO.serviceWithZIO[JwtService](_.createRefreshToken(userId, issuedAt))
+  def validateToken(token: String): RIO[JwtService, UserId] =
     ZIO.serviceWithZIO[JwtService](_.validateToken(token))
   def createRefreshTokenEntity(
     id: String,
     userId: UserId,
     refreshToken: String,
     expiresAt: Instant,
-  ): ZIO[JwtService, Nothing, RefreshTokenEntity] =
+  ): RIO[JwtService, RefreshTokenEntity] =
     ZIO.serviceWithZIO[JwtService](
       _.createRefreshTokenEntity(id, userId, refreshToken, expiresAt)
     )

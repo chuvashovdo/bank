@@ -4,7 +4,7 @@ import java.time.Instant
 import user.entity.UserEntity
 import user.models.User
 import zio.*
-
+import user.models.UserId
 class UserEntityMapperImpl extends UserEntityMapper:
   override def fromUser(
     user: User,
@@ -18,24 +18,21 @@ class UserEntityMapperImpl extends UserEntityMapper:
         user.passwordHash,
         user.firstName,
         user.lastName,
-        user.isActive,
+        true,
         createdAt,
         updatedAt,
       )
     )
   override def toUser(entity: UserEntity): Task[User] =
-    ZIO.succeed {
+    ZIO.succeed:
       User(
         entity.id,
         entity.email,
         entity.passwordHash,
         entity.firstName,
         entity.lastName,
-        entity.isActive,
-        entity.createdAt,
-        entity.updatedAt,
       )
-    }
+
   override def createUserEntity(
     id: UserId,
     email: String,

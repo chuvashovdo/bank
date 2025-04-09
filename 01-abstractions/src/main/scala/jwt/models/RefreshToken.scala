@@ -1,8 +1,5 @@
-package jwt
+package jwt.models
 
--service.models
-
-import zio.json.*
 import java.time.Instant
 import user.models.UserId
 
@@ -11,9 +8,3 @@ final case class RefreshToken(
   expiresAt: Instant,
   userId: UserId,
 )
-
-// object RefreshToken:
-//   given JsonCodec[RefreshToken] =
-//     DeriveJsonCodec.gen[RefreshToken]
-//   given JsonCodec[Instant] =
-//     JsonCodec.instant

@@ -149,6 +149,8 @@ lazy val jwtService =
         "org.postgresql" % "postgresql" % "42.7.1",
         "org.flywaydb" % "flyway-core" % "9.22.3",
         "ch.qos.logback" % "logback-classic" % "1.4.14",
+        "com.github.jwt-scala" %% "jwt-core" % "9.4.5",
+        "com.github.jwt-scala" %% "jwt-zio-json" % "9.4.5",
       ),
       libraryDependencies ++= Seq(
         "org.scalacheck" %% "scalacheck" % "1.17.0",

@@ -3,6 +3,8 @@ package user.serialization
 import zio.*
 import java.time.Instant
 import jwt.models.*
+import zio.json.*
+import user.models.*
 trait UserSerialization:
   def accessTokenCodec: Task[JsonCodec[AccessToken]]
   def refreshTokenCodec: Task[JsonCodec[RefreshToken]]
@@ -18,27 +20,27 @@ trait UserSerialization:
   def instantCodec: Task[JsonCodec[Instant]]
 
 object UserSerialization:
-  def accessTokenCodec: ZIO[UserSerialization, Nothing, JsonCodec[AccessToken]] =
+  def accessTokenCodec: RIO[UserSerialization, JsonCodec[AccessToken]] =
     ZIO.serviceWithZIO[UserSerialization](_.accessTokenCodec)
-  def refreshTokenCodec: ZIO[UserSerialization, Nothing, JsonCodec[RefreshToken]] =
+  def refreshTokenCodec: RIO[UserSerialization, JsonCodec[RefreshToken]] =
     ZIO.serviceWithZIO[UserSerialization](_.refreshTokenCodec)
-  def userCodec: ZIO[UserSerialization, Nothing, JsonCodec[User]] =
+  def userCodec: RIO[UserSerialization, JsonCodec[User]] =
     ZIO.serviceWithZIO[UserSerialization](_.userCodec)
-  def userIdCodec: ZIO[UserSerialization, Nothing, JsonCodec[UserId]] =
+  def userIdCodec: RIO[UserSerialization, JsonCodec[UserId]] =
     ZIO.serviceWithZIO[UserSerialization](_.userIdCodec)
-  def registerUserRequestCodec: ZIO[UserSerialization, Nothing, JsonCodec[RegisterUserRequest]] =
+  def registerUserRequestCodec: RIO[UserSerialization, JsonCodec[RegisterUserRequest]] =
     ZIO.serviceWithZIO[UserSerialization](_.registerUserRequestCodec)
-  def loginRequestCodec: ZIO[UserSerialization, Nothing, JsonCodec[LoginRequest]] =
+  def loginRequestCodec: RIO[UserSerialization, JsonCodec[LoginRequest]] =
     ZIO.serviceWithZIO[UserSerialization](_.loginRequestCodec)
-  def updateUserRequestCodec: ZIO[UserSerialization, Nothing, JsonCodec[UpdateUserRequest]] =
+  def updateUserRequestCodec: RIO[UserSerialization, JsonCodec[UpdateUserRequest]] =
     ZIO.serviceWithZIO[UserSerialization](_.updateUserRequestCodec)
-  def changePasswordRequestCodec: ZIO[UserSerialization, Nothing, JsonCodec[ChangePasswordRequest]] =
+  def changePasswordRequestCodec: RIO[UserSerialization, JsonCodec[ChangePasswordRequest]] =
     ZIO.serviceWithZIO[UserSerialization](_.changePasswordRequestCodec)
-  def userResponseCodec: ZIO[UserSerialization, Nothing, JsonCodec[UserResponse]] =
+  def userResponseCodec: RIO[UserSerialization, JsonCodec[UserResponse]] =
     ZIO.serviceWithZIO[UserSerialization](_.userResponseCodec)
-  def authResponseCodec: ZIO[UserSerialization, Nothing, JsonCodec[AuthResponse]] =
+  def authResponseCodec: RIO[UserSerialization, JsonCodec[AuthResponse]] =
     ZIO.serviceWithZIO[UserSerialization](_.authResponseCodec)
-  def refreshTokenRequestCodec: ZIO[UserSerialization, Nothing, JsonCodec[RefreshTokenRequest]] =
+  def refreshTokenRequestCodec: RIO[UserSerialization, JsonCodec[RefreshTokenRequest]] =
     ZIO.serviceWithZIO[UserSerialization](_.refreshTokenRequestCodec)
-  def instantCodec: ZIO[UserSerialization, Nothing, JsonCodec[Instant]] =
+  def instantCodec: RIO[UserSerialization, JsonCodec[Instant]] =
     ZIO.serviceWithZIO[UserSerialization](_.instantCodec)
