@@ -16,14 +16,20 @@ lazy val root =
   project
     .in(file("."))
     .aggregate(
-      abstractions,
+      authAbstractions,
+      userAbstractions,
+      databaseAbstractions,
+      jwtAbstractions,
+      authService,
       userService,
-      app,
+      databaseService,
+      jwtService,
+      main,
     )
 
-lazy val abstractions =
+lazy val authAbstractions =
   project
-    .in(file("01-abstractions"))
+    .in(file("01-abstractions/auth-service"))
     .settings(
       commonSettings,
       autoImportSettings,
@@ -39,10 +45,64 @@ lazy val abstractions =
       ).map(_ % Test),
     )
 
-lazy val userService =
+lazy val userAbstractions =
   project
-    .in(file("02-services/user-service"))
-    .dependsOn(abstractions)
+    .in(file("01-abstractions/user-service"))
+    .settings(
+      commonSettings,
+      autoImportSettings,
+      libraryDependencies ++= Seq(
+        "dev.zio" %% "zio" % "2.0.19",
+        "dev.zio" %% "zio-json" % "0.6.2",
+      ),
+      libraryDependencies ++= Seq(
+        "org.scalacheck" %% "scalacheck" % "1.17.0",
+        "org.scalameta" %% "munit-scalacheck" % "0.7.29",
+        "org.scalameta" %% "munit" % "0.7.29",
+        "org.typelevel" %% "discipline-munit" % "2.0.0",
+      ).map(_ % Test),
+    )
+
+lazy val databaseAbstractions =
+  project
+    .in(file("01-abstractions/database-service"))
+    .settings(
+      commonSettings,
+      autoImportSettings,
+      libraryDependencies ++= Seq(
+        "dev.zio" %% "zio" % "2.0.19",
+        "dev.zio" %% "zio-json" % "0.6.2",
+      ),
+      libraryDependencies ++= Seq(
+        "org.scalacheck" %% "scalacheck" % "1.17.0",
+        "org.scalameta" %% "munit-scalacheck" % "0.7.29",
+        "org.scalameta" %% "munit" % "0.7.29",
+        "org.typelevel" %% "discipline-munit" % "2.0.0",
+      ).map(_ % Test),
+    )
+
+lazy val jwtAbstractions =
+  project
+    .in(file("01-abstractions/jwt-service"))
+    .settings(
+      commonSettings,
+      autoImportSettings,
+      libraryDependencies ++= Seq(
+        "dev.zio" %% "zio" % "2.0.19",
+        "dev.zio" %% "zio-json" % "0.6.2",
+      ),
+      libraryDependencies ++= Seq(
+        "org.scalacheck" %% "scalacheck" % "1.17.0",
+        "org.scalameta" %% "munit-scalacheck" % "0.7.29",
+        "org.scalameta" %% "munit" % "0.7.29",
+        "org.typelevel" %% "discipline-munit" % "2.0.0",
+      ).map(_ % Test),
+    )
+
+lazy val authService =
+  project
+    .in(file("02-services/auth-service"))
+    .dependsOn(authAbstractions, jwtAbstractions)
     .settings(
       commonSettings,
       autoImportSettings,
@@ -68,10 +128,106 @@ lazy val userService =
       ).map(_ % Test),
     )
 
-lazy val app =
+lazy val userService =
+  project
+    .in(file("02-services/user-service"))
+    .dependsOn(userAbstractions, databaseAbstractions)
+    .settings(
+      commonSettings,
+      autoImportSettings,
+      libraryDependencies ++= Seq(
+        "dev.zio" %% "zio" % "2.0.19",
+        "dev.zio" %% "zio-json" % "0.6.2",
+        "com.softwaremill.sttp.tapir" %% "tapir-core" % "1.9.9",
+        "com.softwaremill.sttp.tapir" %% "tapir-zio" % "1.9.9",
+        "com.softwaremill.sttp.tapir" %% "tapir-zio-http-server" % "1.9.9",
+        "com.softwaremill.sttp.tapir" %% "tapir-json-zio" % "1.9.9",
+        "com.softwaremill.sttp.tapir" %% "tapir-swagger-ui-bundle" % "1.9.9",
+        "com.softwaremill.sttp.apispec" %% "openapi-circe-yaml" % "0.7.3",
+        "io.getquill" %% "quill-jdbc-zio" % "4.8.0",
+        "org.postgresql" % "postgresql" % "42.7.1",
+        "org.flywaydb" % "flyway-core" % "9.22.3",
+        "ch.qos.logback" % "logback-classic" % "1.4.14",
+      ),
+      libraryDependencies ++= Seq(
+        "org.scalacheck" %% "scalacheck" % "1.17.0",
+        "org.scalameta" %% "munit-scalacheck" % "0.7.29",
+        "org.scalameta" %% "munit" % "0.7.29",
+        "org.typelevel" %% "discipline-munit" % "2.0.0",
+      ).map(_ % Test),
+    )
+
+lazy val databaseService =
+  project
+    .in(file("02-services/database-service"))
+    .dependsOn(databaseAbstractions)
+    .settings(
+      commonSettings,
+      autoImportSettings,
+      libraryDependencies ++= Seq(
+        "dev.zio" %% "zio" % "2.0.19",
+        "dev.zio" %% "zio-json" % "0.6.2",
+        "com.softwaremill.sttp.tapir" %% "tapir-core" % "1.9.9",
+        "com.softwaremill.sttp.tapir" %% "tapir-zio" % "1.9.9",
+        "com.softwaremill.sttp.tapir" %% "tapir-zio-http-server" % "1.9.9",
+        "com.softwaremill.sttp.tapir" %% "tapir-json-zio" % "1.9.9",
+        "com.softwaremill.sttp.tapir" %% "tapir-swagger-ui-bundle" % "1.9.9",
+        "com.softwaremill.sttp.apispec" %% "openapi-circe-yaml" % "0.7.3",
+        "io.getquill" %% "quill-jdbc-zio" % "4.8.0",
+        "org.postgresql" % "postgresql" % "42.7.1",
+        "org.flywaydb" % "flyway-core" % "9.22.3",
+        "ch.qos.logback" % "logback-classic" % "1.4.14",
+      ),
+      libraryDependencies ++= Seq(
+        "org.scalacheck" %% "scalacheck" % "1.17.0",
+        "org.scalameta" %% "munit-scalacheck" % "0.7.29",
+        "org.scalameta" %% "munit" % "0.7.29",
+        "org.typelevel" %% "discipline-munit" % "2.0.0",
+      ).map(_ % Test),
+    )
+
+lazy val jwtService =
+  project
+    .in(file("02-services/jwt-service"))
+    .dependsOn(jwtAbstractions)
+    .settings(
+      commonSettings,
+      autoImportSettings,
+      libraryDependencies ++= Seq(
+        "dev.zio" %% "zio" % "2.0.19",
+        "dev.zio" %% "zio-json" % "0.6.2",
+        "com.softwaremill.sttp.tapir" %% "tapir-core" % "1.9.9",
+        "com.softwaremill.sttp.tapir" %% "tapir-zio" % "1.9.9",
+        "com.softwaremill.sttp.tapir" %% "tapir-zio-http-server" % "1.9.9",
+        "com.softwaremill.sttp.tapir" %% "tapir-json-zio" % "1.9.9",
+        "com.softwaremill.sttp.tapir" %% "tapir-swagger-ui-bundle" % "1.9.9",
+        "com.softwaremill.sttp.apispec" %% "openapi-circe-yaml" % "0.7.3",
+        "io.getquill" %% "quill-jdbc-zio" % "4.8.0",
+        "org.postgresql" % "postgresql" % "42.7.1",
+        "org.flywaydb" % "flyway-core" % "9.22.3",
+        "ch.qos.logback" % "logback-classic" % "1.4.14",
+      ),
+      libraryDependencies ++= Seq(
+        "org.scalacheck" %% "scalacheck" % "1.17.0",
+        "org.scalameta" %% "munit-scalacheck" % "0.7.29",
+        "org.scalameta" %% "munit" % "0.7.29",
+        "org.typelevel" %% "discipline-munit" % "2.0.0",
+      ).map(_ % Test),
+    )
+
+lazy val main =
   project
     .in(file("03-app"))
-    .dependsOn(abstractions, userService)
+    .dependsOn(
+      authAbstractions,
+      userAbstractions,
+      databaseAbstractions,
+      jwtAbstractions,
+      authService,
+      userService,
+      databaseService,
+      jwtService,
+    )
     .settings(
       commonSettings,
       autoImportSettings,
