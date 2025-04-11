@@ -9,16 +9,16 @@ trait UserRepository:
   def create(
     email: String,
     passwordHash: String,
-    firstName: String,
-    lastName: String,
+    firstName: Option[String],
+    lastName: Option[String],
   ): Task[User]
   def update(
     id: UserId,
-    firstName: String,
-    lastName: String,
-  ): Task[User]
-  def updatePassword(id: UserId, passwordHash: String): Task[Unit]
-  def deactivate(id: UserId): Task[Unit]
+    firstName: Option[String],
+    lastName: Option[String],
+  ): Task[Option[User]]
+  def updatePassword(id: UserId, passwordHash: String): Task[Boolean]
+  def deactivate(id: UserId): Task[Boolean]
 
 object UserRepository:
   def findById(id: UserId): RIO[UserRepository, Option[User]] =
@@ -28,17 +28,17 @@ object UserRepository:
   def create(
     email: String,
     passwordHash: String,
-    firstName: String,
-    lastName: String,
+    firstName: Option[String],
+    lastName: Option[String],
   ): RIO[UserRepository, User] =
     ZIO.serviceWithZIO[UserRepository](_.create(email, passwordHash, firstName, lastName))
   def update(
     id: UserId,
-    firstName: String,
-    lastName: String,
-  ): RIO[UserRepository, User] =
+    firstName: Option[String],
+    lastName: Option[String],
+  ): RIO[UserRepository, Option[User]] =
     ZIO.serviceWithZIO[UserRepository](_.update(id, firstName, lastName))
-  def updatePassword(id: UserId, passwordHash: String): RIO[UserRepository, Unit] =
+  def updatePassword(id: UserId, passwordHash: String): RIO[UserRepository, Boolean] =
     ZIO.serviceWithZIO[UserRepository](_.updatePassword(id, passwordHash))
-  def deactivate(id: UserId): RIO[UserRepository, Unit] =
+  def deactivate(id: UserId): RIO[UserRepository, Boolean] =
     ZIO.serviceWithZIO[UserRepository](_.deactivate(id))

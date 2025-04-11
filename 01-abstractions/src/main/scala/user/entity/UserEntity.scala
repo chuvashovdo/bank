@@ -1,14 +1,13 @@
 package user.entity
 
 import java.time.Instant
-import user.models.UserId
 
 final case class UserEntity(
-  id: UserId,
+  id: String,
   email: String,
   passwordHash: String,
-  firstName: String,
-  lastName: String,
+  firstName: Option[String],
+  lastName: Option[String],
   isActive: Boolean,
   createdAt: Instant,
   updatedAt: Instant,

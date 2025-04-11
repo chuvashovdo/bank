@@ -17,8 +17,8 @@ trait UserEntityMapper:
     id: UserId,
     email: String,
     passwordHash: String,
-    firstName: String,
-    lastName: String,
+    firstName: Option[String],
+    lastName: Option[String],
   ): Task[UserEntity]
 
 object UserEntityMapper:
@@ -28,8 +28,8 @@ object UserEntityMapper:
     id: UserId,
     email: String,
     passwordHash: String,
-    firstName: String,
-    lastName: String,
+    firstName: Option[String],
+    lastName: Option[String],
   ): RIO[UserEntityMapper, UserEntity] =
     ZIO.serviceWithZIO[UserEntityMapper](
       _.createUserEntity(id, email, passwordHash, firstName, lastName)

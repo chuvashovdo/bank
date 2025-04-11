@@ -10,15 +10,15 @@ trait UserService:
   def registerUser(
     email: String,
     password: String,
-    firstName: String,
-    lastName: String,
+    firstName: Option[String],
+    lastName: Option[String],
   ): Task[User]
   def validateCredentials(email: String, password: String): Task[Option[User]]
   def updateUser(
     id: UserId,
-    firstName: String,
-    lastName: String,
-  ): Task[User]
+    firstName: Option[String],
+    lastName: Option[String],
+  ): Task[Option[User]]
   def changePassword(
     id: UserId,
     oldPassword: String,
@@ -34,8 +34,8 @@ object UserService:
   def registerUser(
     email: String,
     password: String,
-    firstName: String,
-    lastName: String,
+    firstName: Option[String],
+    lastName: Option[String],
   ): RIO[UserService, User] =
     ZIO.serviceWithZIO[UserService](_.registerUser(email, password, firstName, lastName))
   def validateCredentials(
@@ -45,9 +45,9 @@ object UserService:
     ZIO.serviceWithZIO[UserService](_.validateCredentials(email, password))
   def updateUser(
     id: UserId,
-    firstName: String,
-    lastName: String,
-  ): RIO[UserService, User] =
+    firstName: Option[String],
+    lastName: Option[String],
+  ): RIO[UserService, Option[User]] =
     ZIO.serviceWithZIO[UserService](_.updateUser(id, firstName, lastName))
   def changePassword(
     id: UserId,

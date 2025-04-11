@@ -13,7 +13,7 @@ class UserEntityMapperImpl extends UserEntityMapper:
   ): Task[UserEntity] =
     ZIO.succeed(
       UserEntity(
-        user.id,
+        user.id.value,
         user.email,
         user.passwordHash,
         user.firstName,
@@ -26,23 +26,24 @@ class UserEntityMapperImpl extends UserEntityMapper:
   override def toUser(entity: UserEntity): Task[User] =
     ZIO.succeed:
       User(
-        entity.id,
+        UserId(entity.id),
         entity.email,
         entity.passwordHash,
         entity.firstName,
         entity.lastName,
+        entity.isActive,
       )
 
   override def createUserEntity(
     id: UserId,
     email: String,
     passwordHash: String,
-    firstName: String,
-    lastName: String,
+    firstName: Option[String],
+    lastName: Option[String],
   ): Task[UserEntity] =
     ZIO.succeed(
       UserEntity(
-        id,
+        id.value,
         email,
         passwordHash,
         firstName,
@@ -52,3 +53,7 @@ class UserEntityMapperImpl extends UserEntityMapper:
         Instant.now(),
       )
     )
+
+object UserEntityMapperImpl:
+  val layer: ULayer[UserEntityMapper] =
+    ZLayer.succeed(UserEntityMapperImpl())

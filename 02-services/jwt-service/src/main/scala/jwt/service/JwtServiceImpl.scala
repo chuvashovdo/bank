@@ -8,7 +8,6 @@ import java.time.Instant
 import pdi.jwt.{ JwtAlgorithm, JwtClaim, JwtZIOJson }
 import jwt.entity.RefreshTokenEntity
 import jwt.models.RefreshToken
-import zio.json.*
 class JwtServiceImpl(jwtConfig: JwtConfig) extends JwtService:
   override def createAccessToken(
     userId: UserId,
@@ -22,7 +21,6 @@ class JwtServiceImpl(jwtConfig: JwtConfig) extends JwtService:
       expiresAt = issuedAt.plusMillis(expirationMillis)
       claim =
         JwtClaim(
-          content = s"""{"userId": "${userId.value}"}""",
           issuer = Some(issuer),
           audience = Some(Set(audience)),
           subject = Some(userId.value),
@@ -51,7 +49,6 @@ class JwtServiceImpl(jwtConfig: JwtConfig) extends JwtService:
       expiresAt = issuedAt.plusMillis(expirationMillis)
       claim =
         JwtClaim(
-          content = s"""{"userId": "${userId.value}"}""",
           issuer = Some(issuer),
           audience = Some(Set(audience)),
           subject = Some(userId.value),
@@ -76,14 +73,8 @@ class JwtServiceImpl(jwtConfig: JwtConfig) extends JwtService:
       expiration <-
         ZIO.fromOption(claim.expiration).orElseFail(new Exception("Token has no expiration"))
       _ <- ZIO.fail(new Exception("Token expired")).when(expiration <= now)
-      content = claim.content
-      jwtContent <-
-        ZIO
-          .fromEither(content.fromJson[JwtContent])
-          .mapError(_ => new Exception("Invalid token content"))
-    yield UserId(jwtContent.userId)
-
-  case class JwtContent(userId: String) derives JsonDecoder
+      subject <- ZIO.fromOption(claim.subject).orElseFail(new Exception("No subject in token"))
+    yield UserId(subject)
 
   override def createRefreshTokenEntity(
     id: String,
