@@ -12,6 +12,20 @@ ThisBuild / scalacOptions ++= Seq(
   "-language:unsafeNulls",
 )
 
+// Общие зависимости для тестов, добавляются к ThisBuild
+ThisBuild / libraryDependencies ++= Seq(
+  // ZIO Test - основной фреймворк для тестирования
+  "dev.zio" %% "zio-test" % "2.0.19" % Test,
+  "dev.zio" %% "zio-test-sbt" % "2.0.19" % Test,
+  "dev.zio" %% "zio-test-magnolia" % "2.0.19" % Test,
+
+  // ScalaMock - для создания моков (если нужны)
+  "org.scalamock" %% "scalamock" % "7.3.0" % Test,
+)
+
+// Настройка тестового фреймворка для sbt
+ThisBuild / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
+
 lazy val root =
   project
     .in(file("."))
@@ -39,6 +53,8 @@ lazy val abstractions =
         "org.scalameta" %% "munit" % "0.7.29",
         "org.typelevel" %% "discipline-munit" % "2.0.0",
       ).map(_ % Test),
+      Test / fork := true,
+      Test / testOptions += Tests.Argument(TestFrameworks.MUnit, "+l"),
     )
 
 lazy val authService =
@@ -68,6 +84,7 @@ lazy val authService =
         "org.scalameta" %% "munit" % "0.7.29",
         "org.typelevel" %% "discipline-munit" % "2.0.0",
       ).map(_ % Test),
+      Test / fork := true,
     )
 
 lazy val userService =
@@ -98,6 +115,7 @@ lazy val userService =
         "org.scalameta" %% "munit" % "0.7.29",
         "org.typelevel" %% "discipline-munit" % "2.0.0",
       ).map(_ % Test),
+      Test / fork := true,
     )
 
 lazy val jwtService =
@@ -129,6 +147,7 @@ lazy val jwtService =
         "org.scalameta" %% "munit" % "0.7.29",
         "org.typelevel" %% "discipline-munit" % "2.0.0",
       ).map(_ % Test),
+      Test / fork := true,
     )
 
 lazy val main =
