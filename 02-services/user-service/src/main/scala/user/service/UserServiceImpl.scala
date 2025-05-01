@@ -30,7 +30,7 @@ class UserServiceImpl(userRepository: UserRepository) extends UserService:
     for
       user <- userRepository.findByEmail(email)
       isValid <-
-        if user.isDefined then checkPassword(password, user.get.passwordHash)
+        if user.isDefined && user.get.isActive then checkPassword(password, user.get.passwordHash)
         else ZIO.succeed(false)
       _ <-
         ZIO
@@ -51,15 +51,19 @@ class UserServiceImpl(userRepository: UserRepository) extends UserService:
     newPassword: String,
   ): Task[Boolean] =
     for
-      user <- userRepository.findById(id)
-      isValid <-
-        if user.isDefined then checkPassword(oldPassword, user.get.passwordHash)
-        else ZIO.succeed(false)
-      _ <-
-        ZIO
-          .fail(new Exception("Invalid credentials"))
-          .when(!isValid)
-    yield true
+      maybeUser <- userRepository.findById(id)
+      result <-
+        maybeUser match
+          case Some(user) if user.isActive =>
+            for
+              isValid <- checkPassword(oldPassword, user.passwordHash)
+              _ <- ZIO.fail(new Exception("Invalid credentials")).when(!isValid)
+              newHash <- hashPassword(newPassword)
+              updated <- userRepository.updatePassword(id, newHash)
+            yield updated
+          case _ =>
+            ZIO.fail(new Exception("Invalid credentials"))
+    yield result
 
   override def deactivateUser(id: UserId): Task[Boolean] =
     userRepository.deactivate(id)

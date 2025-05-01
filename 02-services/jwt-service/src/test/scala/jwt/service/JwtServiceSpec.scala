@@ -73,7 +73,6 @@ object JwtServiceSpec extends ZIOSpecDefault:
           config <- ZIO.service[JwtConfig]
           userId = UserId("test-user-id")
           // Создаем токен со сроком действия в прошлом
-          // При этом устанавливаем срок действия напрямую в JwtClaim,
           // чтобы имитировать истекший токен
           now = Instant.now()
           expiredTime = now.minusSeconds(3600) // час назад

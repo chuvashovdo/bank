@@ -4,7 +4,6 @@ import zio.*
 import zio.test.*
 
 object JwtConfigSpec extends ZIOSpecDefault:
-  // Создаем моковую реализацию для тестов
   class TestJwtConfig extends JwtConfig:
     private var properties =
       Map(

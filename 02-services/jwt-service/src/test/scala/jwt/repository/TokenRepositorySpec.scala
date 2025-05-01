@@ -11,10 +11,20 @@ import io.getquill.jdbczio.Quill
 import javax.sql.DataSource
 import com.zaxxer.hikari.{ HikariConfig, HikariDataSource }
 import java.sql.Timestamp
+import org.slf4j.LoggerFactory
+import ch.qos.logback.classic.{ Level, Logger }
 
 object TokenRepositorySpec extends ZIOSpecDefault:
+  locally:
+    val rootLogger = LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME).asInstanceOf[Logger]
+    rootLogger.setLevel(Level.WARN)
 
-  // Явное кодирование/декодирование для Instant <-> Timestamp
+    val hikariLogger = LoggerFactory.getLogger("com.zaxxer.hikari").asInstanceOf[Logger]
+    hikariLogger.setLevel(Level.ERROR)
+
+    val quillLogger = LoggerFactory.getLogger("io.getquill").asInstanceOf[Logger]
+    quillLogger.setLevel(Level.ERROR)
+
   implicit val instantEncoder: MappedEncoding[Instant, Timestamp] =
     MappedEncoding(Timestamp.from)
   implicit val instantDecoder: MappedEncoding[Timestamp, Instant] =
@@ -29,34 +39,26 @@ object TokenRepositorySpec extends ZIOSpecDefault:
           // Уникальное имя БД для каждого запуска тестов
           val dbName = s"test_db_${UUID.randomUUID()}"
           config.setJdbcUrl(s"jdbc:h2:mem:$dbName;MODE=PostgreSQL;DB_CLOSE_DELAY=-1")
+          config.setDriverClassName("org.h2.Driver")
           config.setUsername("sa")
           config.setPassword("")
           val ds = new HikariDataSource(config)
 
-          // Выполняем SQL для создания таблицы перед использованием DataSource
-          val createTableSql = """ 
-            CREATE TABLE refresh_tokens (
-                id VARCHAR(36) PRIMARY KEY,
-                user_id VARCHAR(255) NOT NULL,
-                refresh_token VARCHAR(1024) NOT NULL,
-                expires_at TIMESTAMP NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
-            );
-            """
-
-          // Используем явное управление соединением и транзакцией
           val conn = ds.getConnection()
-          try
-            conn.setAutoCommit(false) // Отключаем автокоммит
-            val stmt = conn.createStatement()
-            try
-              stmt.execute(createTableSql)
-              conn.commit() // Явный коммит транзакции
-            finally stmt.close()
-          finally conn.close()
-
-          ds // Возвращаем созданный DataSource
-      }(ds => ZIO.attemptBlocking(ds.close()).orDie) // Указал тип и использовал attemptBlocking
+          conn.createStatement().execute("DROP TABLE IF EXISTS refresh_tokens")
+          conn
+            .createStatement()
+            .execute:
+              """CREATE TABLE refresh_tokens (
+              id VARCHAR(36) PRIMARY KEY,
+              user_id VARCHAR(255) NOT NULL,
+              refresh_token VARCHAR(1024) NOT NULL,
+              expires_at TIMESTAMP NOT NULL,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+            )"""
+          conn.close()
+          ds
+      }(ds => ZIO.attemptBlocking(ds.close()).orDie)
 
   val quillLayer: ZLayer[DataSource, Nothing, Quill.Postgres[SnakeCase]] =
     Quill.Postgres.fromNamingStrategy(SnakeCase)
@@ -133,7 +135,7 @@ object TokenRepositorySpec extends ZIOSpecDefault:
           userIdObj = UserId(userId)
           token1 = createTestRefreshToken(userId)
           token2 = createTestRefreshToken(userId)
-          otherUserToken = createTestRefreshToken("other-user") // Токен другого пользователя
+          otherUserToken = createTestRefreshToken("other-user")
           _ <- repo.saveRefreshToken(token1)
           _ <- repo.saveRefreshToken(token2)
           _ <- repo.saveRefreshToken(otherUserToken)
