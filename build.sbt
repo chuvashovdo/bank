@@ -146,6 +146,7 @@ lazy val jwtService =
         "org.scalameta" %% "munit-scalacheck" % "0.7.29",
         "org.scalameta" %% "munit" % "0.7.29",
         "org.typelevel" %% "discipline-munit" % "2.0.0",
+        "com.h2database" % "h2" % "2.2.224",
       ).map(_ % Test),
       Test / fork := true,
     )

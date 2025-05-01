@@ -6,7 +6,6 @@ import jwt.models.AccessToken
 import user.models.UserId
 import java.time.Instant
 import pdi.jwt.{ JwtAlgorithm, JwtClaim, JwtZIOJson }
-import jwt.entity.RefreshTokenEntity
 import jwt.models.RefreshToken
 class JwtServiceImpl(jwtConfig: JwtConfig) extends JwtService:
   override def createAccessToken(
@@ -75,14 +74,6 @@ class JwtServiceImpl(jwtConfig: JwtConfig) extends JwtService:
       _ <- ZIO.fail(new Exception("Token expired")).when(expiration <= now)
       subject <- ZIO.fromOption(claim.subject).orElseFail(new Exception("No subject in token"))
     yield UserId(subject)
-
-  override def createRefreshTokenEntity(
-    id: String,
-    userId: UserId,
-    refreshToken: String,
-    expiresAt: Instant,
-  ): Task[RefreshTokenEntity] =
-    ZIO.succeed(RefreshTokenEntity(id, userId.value, refreshToken, expiresAt, Instant.now()))
 
 object JwtServiceImpl:
   val layer: ZLayer[JwtConfig, Nothing, JwtService] =

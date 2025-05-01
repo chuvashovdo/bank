@@ -36,7 +36,10 @@ final case class AuthServiceImpl(
     yield token
 
   override def validateToken(token: String): Task[Option[UserId]] =
-    jwtService.validateToken(token).map(Some(_))
+    jwtService
+      .validateToken(token)
+      .map(Some(_))
+      .catchAll(_ => ZIO.succeed(None))
 
   override def createRefreshToken(userId: UserId): Task[RefreshToken] =
     for

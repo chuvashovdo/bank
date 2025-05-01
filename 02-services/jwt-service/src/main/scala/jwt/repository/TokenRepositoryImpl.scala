@@ -5,21 +5,28 @@ import zio.*
 import io.getquill.*
 import io.getquill.jdbczio.Quill
 import jwt.models.RefreshToken
-import jwt.service.JwtService
 import user.models.UserId
+import java.time.Instant
 import java.util.UUID
 
-class TokenRepositoryImpl(quill: Quill.Postgres[SnakeCase], jwtService: JwtService)
-    extends TokenRepository:
+class TokenRepositoryImpl(quill: Quill.Postgres[SnakeCase]) extends TokenRepository:
   import quill.*
 
   inline given tokenSchemaMeta: SchemaMeta[RefreshTokenEntity] =
     schemaMeta("refresh_tokens")
 
+  private def createRefreshTokenEntity(
+    id: String,
+    userId: UserId,
+    refreshToken: String,
+    expiresAt: Instant,
+  ): Task[RefreshTokenEntity] =
+    ZIO.succeed(RefreshTokenEntity(id, userId.value, refreshToken, expiresAt, Instant.now()))
+
   override def saveRefreshToken(refreshToken: RefreshToken): Task[Unit] =
     for
       tokenEntity <-
-        jwtService.createRefreshTokenEntity(
+        createRefreshTokenEntity(
           id = UUID.randomUUID().toString,
           userId = refreshToken.userId,
           refreshToken = refreshToken.token,
@@ -65,10 +72,9 @@ class TokenRepositoryImpl(quill: Quill.Postgres[SnakeCase], jwtService: JwtServi
     }).unit
 
 object TokenRepositoryImpl:
-  val layer: URLayer[Quill.Postgres[SnakeCase] & JwtService, TokenRepository] =
+  val layer: URLayer[Quill.Postgres[SnakeCase], TokenRepository] =
     ZLayer:
       for
         quill <- ZIO.service[Quill.Postgres[SnakeCase]]
-        jwtService <- ZIO.service[JwtService]
-        impl <- ZIO.succeed(TokenRepositoryImpl(quill, jwtService))
+        impl <- ZIO.succeed(TokenRepositoryImpl(quill))
       yield impl

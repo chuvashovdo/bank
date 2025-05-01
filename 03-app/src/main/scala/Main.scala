@@ -71,8 +71,6 @@ object Main extends ZIOAppDefault:
 
   val tokenRepositoryLayer =
     ZLayer.make[TokenRepository](
-      JwtConfigImpl.layer,
-      JwtServiceImpl.layer,
       TokenRepositoryImpl.layer,
       DbConfigImpl.layer,
       QuillContext.dataSourceLayer,

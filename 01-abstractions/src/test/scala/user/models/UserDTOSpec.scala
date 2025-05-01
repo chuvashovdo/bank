@@ -101,8 +101,6 @@ object UserDTOSpec extends ZIOSpecDefault:
           }
         }
       },
-
-      // Заглушка для тестов валидации, так как методы isEmailValid и isPasswordValid не найдены
       test("RegisterUserRequest should validate input") {
         val validRequest =
           RegisterUserRequest(
@@ -112,7 +110,6 @@ object UserDTOSpec extends ZIOSpecDefault:
             Some("Doe"),
           )
 
-        // Базовые проверки формата
         assertTrue(validRequest.email.contains("@")) &&
         assertTrue(validRequest.password.length >= 8)
       },
