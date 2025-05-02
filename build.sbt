@@ -152,12 +152,10 @@ lazy val jwtService =
       Test / fork := true,
     )
 
-import com.typesafe.sbt.packager.docker._
-
 lazy val main =
   project
     .in(file("03-app"))
-    .enablePlugins(JavaAppPackaging, DockerPlugin)
+    .enablePlugins(JavaAppPackaging)
     .dependsOn(
       abstractions,
       authService,
@@ -167,21 +165,6 @@ lazy val main =
     .settings(
       commonSettings,
       autoImportSettings,
-      // Docker настройки
-      Docker / packageName := "bank-app",
-      Docker / version := "latest",
-      Docker / maintainer := "dev@example.com",
-      dockerBaseImage := "openjdk:17-jdk-slim",
-      dockerExposedPorts ++= Seq(8080),
-      dockerEnvVars := Map(
-        "DB_HOST" -> "postgres",
-        "DB_PORT" -> "5432",
-        "DB_NAME" -> "bank",
-        "DB_USER" -> "postgres",
-        "DB_PASSWORD" -> "postgres",
-      ),
-      dockerUpdateLatest := true,
-      // Настройки для запуска
       libraryDependencies ++= Seq(
         "dev.zio" %% "zio" % "2.0.19",
         "dev.zio" %% "zio-json" % "0.6.2",
