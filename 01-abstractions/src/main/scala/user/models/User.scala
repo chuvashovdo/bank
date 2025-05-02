@@ -10,6 +10,7 @@ final case class User(
   isActive: Boolean,
 )
 
+// ! TODO: add types for validating input data using iron
 object User:
   given JsonCodec[User] =
     DeriveJsonCodec.gen[User]
