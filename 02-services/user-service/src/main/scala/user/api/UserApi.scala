@@ -4,10 +4,8 @@ import auth.service.*
 import user.service.*
 import user.models.*
 import user.mapper.*
-import scala.language.unsafeNulls
 import sttp.model.StatusCode
 import zio.*
-// Tapir imports
 import sttp.tapir.*
 import sttp.tapir.json.zio.*
 import sttp.tapir.swagger.bundle.SwaggerInterpreter
@@ -20,8 +18,6 @@ class UserApi(
   userService: UserService,
   userResponseMapper: UserResponseMapper,
 ):
-
-  // Базовые эндпоинты
   private val baseEndpoint =
     endpoint.errorOut:
       oneOf[ErrorResponse](
