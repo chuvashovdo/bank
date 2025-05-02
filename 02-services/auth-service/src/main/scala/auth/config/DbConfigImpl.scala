@@ -9,13 +9,18 @@ import javax.sql.DataSource
 
 object DbConfigImpl:
   val layer: ULayer[DbConfig] =
-    ZLayer.succeed(
+    ZLayer.succeed:
+      val dbHost = sys.env.getOrElse("DB_HOST", "localhost")
+      val dbPort = sys.env.getOrElse("DB_PORT", "5432")
+      val dbName = sys.env.getOrElse("DB_NAME", "bank")
+      val dbUser = sys.env.getOrElse("DB_USER", "postgres")
+      val dbPassword = sys.env.getOrElse("DB_PASSWORD", "postgres")
+
       DbConfig(
-        url = "jdbc:postgresql://localhost:5432/bank",
-        user = "postgres",
-        password = "postgres",
+        url = s"jdbc:postgresql://$dbHost:$dbPort/$dbName",
+        user = dbUser,
+        password = dbPassword,
       )
-    )
 
 object QuillContext:
   val dataSourceLayer: URLayer[DbConfig, Quill.Postgres[SnakeCase.type]] =
