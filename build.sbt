@@ -1,5 +1,43 @@
 import sbt._
 
+// Версии библиотек
+lazy val versions =
+  new {
+    val zio =
+      "2.0.19"
+    val zioJson =
+      "0.6.2"
+    "0.6.2"
+    val zioHttp =
+      "3.0.0-RC2"
+    val tapir =
+      "1.9.9"
+    val openapiCirceYaml =
+      "0.7.3"
+    val quill =
+      "4.8.0"
+    val postgresql =
+      "42.7.1"
+    val flyway =
+      "9.22.3"
+    val logback =
+      "1.4.14"
+    val jwtScala =
+      "9.4.5"
+    val h2 =
+      "2.2.224"
+    val jbcrypt =
+      "0.4"
+    val scalacheck =
+      "1.17.0"
+    val munit =
+      "0.7.29"
+    val disciplineMunit =
+      "2.0.0"
+    val scalamock =
+      "7.3.0"
+  }
+
 ThisBuild / organization := "bank"
 ThisBuild / scalaVersion := "3.6.4"
 ThisBuild / version := "0.1.0-SNAPSHOT"
@@ -12,19 +50,62 @@ ThisBuild / scalacOptions ++= Seq(
   "-language:unsafeNulls",
 )
 
-// Общие зависимости для тестов, добавляются к ThisBuild
-ThisBuild / libraryDependencies ++= Seq(
-  // ZIO Test - основной фреймворк для тестирования
-  "dev.zio" %% "zio-test" % "2.0.19" % Test,
-  "dev.zio" %% "zio-test-sbt" % "2.0.19" % Test,
-  "dev.zio" %% "zio-test-magnolia" % "2.0.19" % Test,
+ThisBuild / parallelExecution := true
 
-  // ScalaMock - для создания моков (если нужны)
-  "org.scalamock" %% "scalamock" % "7.3.0" % Test,
+// Зависимости по категориям
+lazy val commonDependencies =
+  Seq(
+    "dev.zio" %% "zio" % versions.zio,
+    "dev.zio" %% "zio-json" % versions.zioJson,
+    "ch.qos.logback" % "logback-classic" % versions.logback,
+  )
+
+lazy val tapirDependencies =
+  Seq(
+    "com.softwaremill.sttp.tapir" %% "tapir-core" % versions.tapir,
+    "com.softwaremill.sttp.tapir" %% "tapir-zio" % versions.tapir,
+    "com.softwaremill.sttp.tapir" %% "tapir-zio-http-server" % versions.tapir,
+    "com.softwaremill.sttp.tapir" %% "tapir-json-zio" % versions.tapir,
+    "com.softwaremill.sttp.tapir" %% "tapir-swagger-ui-bundle" % versions.tapir,
+    "com.softwaremill.sttp.apispec" %% "openapi-circe-yaml" % versions.openapiCirceYaml,
+  )
+
+lazy val databaseDependencies =
+  Seq(
+    "io.getquill" %% "quill-jdbc-zio" % versions.quill,
+    "org.postgresql" % "postgresql" % versions.postgresql,
+    "org.flywaydb" % "flyway-core" % versions.flyway,
+  )
+
+lazy val commonTestDependencies =
+  Seq(
+    "org.scalacheck" %% "scalacheck" % versions.scalacheck,
+    "org.scalameta" %% "munit-scalacheck" % versions.munit,
+    "org.scalameta" %% "munit" % versions.munit,
+    "org.typelevel" %% "discipline-munit" % versions.disciplineMunit,
+  ).map(_ % Test)
+
+lazy val h2TestDependency =
+  Seq(
+    "com.h2database" % "h2" % versions.h2 % Test
+  )
+
+// ZIO тестовые зависимости на уровне проекта
+ThisBuild / libraryDependencies ++= Seq(
+  "dev.zio" %% "zio-test" % versions.zio % Test,
+  "dev.zio" %% "zio-test-sbt" % versions.zio % Test,
+  "dev.zio" %% "zio-test-magnolia" % versions.zio % Test,
+  "org.scalamock" %% "scalamock" % versions.scalamock % Test,
 )
 
 // Настройка тестового фреймворка для sbt
 ThisBuild / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
+
+// Общие тестовые настройки
+lazy val commonTestSettings =
+  Seq(
+    Test / fork := true
+  )
 
 lazy val root =
   project
@@ -43,18 +124,22 @@ lazy val abstractions =
     .settings(
       commonSettings,
       autoImportSettings,
-      libraryDependencies ++= Seq(
-        "dev.zio" %% "zio" % "2.0.19",
-        "dev.zio" %% "zio-json" % "0.6.2",
-      ),
-      libraryDependencies ++= Seq(
-        "org.scalacheck" %% "scalacheck" % "1.17.0",
-        "org.scalameta" %% "munit-scalacheck" % "0.7.29",
-        "org.scalameta" %% "munit" % "0.7.29",
-        "org.typelevel" %% "discipline-munit" % "2.0.0",
-      ).map(_ % Test),
-      Test / fork := true,
+      commonTestSettings,
+      libraryDependencies ++= commonDependencies,
+      libraryDependencies ++= commonTestDependencies,
       Test / testOptions += Tests.Argument(TestFrameworks.MUnit, "+l"),
+    )
+
+lazy val serviceCommonSettings =
+  commonSettings ++
+    autoImportSettings ++
+    commonTestSettings ++
+    Seq(
+      libraryDependencies ++= commonDependencies,
+      libraryDependencies ++= tapirDependencies,
+      libraryDependencies ++= databaseDependencies,
+      libraryDependencies ++= commonTestDependencies,
+      libraryDependencies ++= h2TestDependency,
     )
 
 lazy val authService =
@@ -62,29 +147,7 @@ lazy val authService =
     .in(file("02-services/auth-service"))
     .dependsOn(abstractions)
     .settings(
-      commonSettings,
-      autoImportSettings,
-      libraryDependencies ++= Seq(
-        "dev.zio" %% "zio" % "2.0.19",
-        "dev.zio" %% "zio-json" % "0.6.2",
-        "com.softwaremill.sttp.tapir" %% "tapir-core" % "1.9.9",
-        "com.softwaremill.sttp.tapir" %% "tapir-zio" % "1.9.9",
-        "com.softwaremill.sttp.tapir" %% "tapir-zio-http-server" % "1.9.9",
-        "com.softwaremill.sttp.tapir" %% "tapir-json-zio" % "1.9.9",
-        "com.softwaremill.sttp.tapir" %% "tapir-swagger-ui-bundle" % "1.9.9",
-        "com.softwaremill.sttp.apispec" %% "openapi-circe-yaml" % "0.7.3",
-        "io.getquill" %% "quill-jdbc-zio" % "4.8.0",
-        "org.postgresql" % "postgresql" % "42.7.1",
-        "org.flywaydb" % "flyway-core" % "9.22.3",
-        "ch.qos.logback" % "logback-classic" % "1.4.14",
-      ),
-      libraryDependencies ++= Seq(
-        "org.scalacheck" %% "scalacheck" % "1.17.0",
-        "org.scalameta" %% "munit-scalacheck" % "0.7.29",
-        "org.scalameta" %% "munit" % "0.7.29",
-        "org.typelevel" %% "discipline-munit" % "2.0.0",
-      ).map(_ % Test),
-      Test / fork := true,
+      serviceCommonSettings
     )
 
 lazy val userService =
@@ -92,31 +155,8 @@ lazy val userService =
     .in(file("02-services/user-service"))
     .dependsOn(abstractions)
     .settings(
-      commonSettings,
-      autoImportSettings,
-      libraryDependencies ++= Seq(
-        "dev.zio" %% "zio" % "2.0.19",
-        "dev.zio" %% "zio-json" % "0.6.2",
-        "com.softwaremill.sttp.tapir" %% "tapir-core" % "1.9.9",
-        "com.softwaremill.sttp.tapir" %% "tapir-zio" % "1.9.9",
-        "com.softwaremill.sttp.tapir" %% "tapir-zio-http-server" % "1.9.9",
-        "com.softwaremill.sttp.tapir" %% "tapir-json-zio" % "1.9.9",
-        "com.softwaremill.sttp.tapir" %% "tapir-swagger-ui-bundle" % "1.9.9",
-        "com.softwaremill.sttp.apispec" %% "openapi-circe-yaml" % "0.7.3",
-        "io.getquill" %% "quill-jdbc-zio" % "4.8.0",
-        "org.postgresql" % "postgresql" % "42.7.1",
-        "org.flywaydb" % "flyway-core" % "9.22.3",
-        "ch.qos.logback" % "logback-classic" % "1.4.14",
-        "org.mindrot" % "jbcrypt" % "0.4",
-      ),
-      libraryDependencies ++= Seq(
-        "org.scalacheck" %% "scalacheck" % "1.17.0",
-        "org.scalameta" %% "munit-scalacheck" % "0.7.29",
-        "org.scalameta" %% "munit" % "0.7.29",
-        "org.typelevel" %% "discipline-munit" % "2.0.0",
-        "com.h2database" % "h2" % "2.2.224",
-      ).map(_ % Test),
-      Test / fork := true,
+      serviceCommonSettings,
+      libraryDependencies += "org.mindrot" % "jbcrypt" % versions.jbcrypt,
     )
 
 lazy val jwtService =
@@ -124,32 +164,11 @@ lazy val jwtService =
     .in(file("02-services/jwt-service"))
     .dependsOn(abstractions)
     .settings(
-      commonSettings,
-      autoImportSettings,
+      serviceCommonSettings,
       libraryDependencies ++= Seq(
-        "dev.zio" %% "zio" % "2.0.19",
-        "dev.zio" %% "zio-json" % "0.6.2",
-        "com.softwaremill.sttp.tapir" %% "tapir-core" % "1.9.9",
-        "com.softwaremill.sttp.tapir" %% "tapir-zio" % "1.9.9",
-        "com.softwaremill.sttp.tapir" %% "tapir-zio-http-server" % "1.9.9",
-        "com.softwaremill.sttp.tapir" %% "tapir-json-zio" % "1.9.9",
-        "com.softwaremill.sttp.tapir" %% "tapir-swagger-ui-bundle" % "1.9.9",
-        "com.softwaremill.sttp.apispec" %% "openapi-circe-yaml" % "0.7.3",
-        "io.getquill" %% "quill-jdbc-zio" % "4.8.0",
-        "org.postgresql" % "postgresql" % "42.7.1",
-        "org.flywaydb" % "flyway-core" % "9.22.3",
-        "ch.qos.logback" % "logback-classic" % "1.4.14",
-        "com.github.jwt-scala" %% "jwt-core" % "9.4.5",
-        "com.github.jwt-scala" %% "jwt-zio-json" % "9.4.5",
+        "com.github.jwt-scala" %% "jwt-core" % versions.jwtScala,
+        "com.github.jwt-scala" %% "jwt-zio-json" % versions.jwtScala,
       ),
-      libraryDependencies ++= Seq(
-        "org.scalacheck" %% "scalacheck" % "1.17.0",
-        "org.scalameta" %% "munit-scalacheck" % "0.7.29",
-        "org.scalameta" %% "munit" % "0.7.29",
-        "org.typelevel" %% "discipline-munit" % "2.0.0",
-        "com.h2database" % "h2" % "2.2.224",
-      ).map(_ % Test),
-      Test / fork := true,
     )
 
 lazy val main =
@@ -165,25 +184,12 @@ lazy val main =
     .settings(
       commonSettings,
       autoImportSettings,
-      libraryDependencies ++= Seq(
-        "dev.zio" %% "zio" % "2.0.19",
-        "dev.zio" %% "zio-json" % "0.6.2",
-        "dev.zio" %% "zio-http" % "3.0.0-RC2",
-        "com.softwaremill.sttp.tapir" %% "tapir-core" % "1.9.9",
-        "com.softwaremill.sttp.tapir" %% "tapir-zio" % "1.9.9",
-        "com.softwaremill.sttp.tapir" %% "tapir-zio-http-server" % "1.9.9",
-        "com.softwaremill.sttp.tapir" %% "tapir-json-zio" % "1.9.9",
-        "com.softwaremill.sttp.tapir" %% "tapir-swagger-ui-bundle" % "1.9.9",
-        "com.softwaremill.sttp.apispec" %% "openapi-circe-yaml" % "0.7.3",
-        "org.flywaydb" % "flyway-core" % "9.22.3",
-        "ch.qos.logback" % "logback-classic" % "1.4.14",
-      ),
-      libraryDependencies ++= Seq(
-        "org.scalacheck" %% "scalacheck" % "1.17.0",
-        "org.scalameta" %% "munit-scalacheck" % "0.7.29",
-        "org.scalameta" %% "munit" % "0.7.29",
-        "org.typelevel" %% "discipline-munit" % "2.0.0",
-      ).map(_ % Test),
+      commonTestSettings,
+      libraryDependencies ++= commonDependencies,
+      libraryDependencies ++= tapirDependencies,
+      libraryDependencies += "dev.zio" %% "zio-http" % versions.zioHttp,
+      libraryDependencies += "org.flywaydb" % "flyway-core" % versions.flyway,
+      libraryDependencies ++= commonTestDependencies,
     )
 
 lazy val commonSettings = {
