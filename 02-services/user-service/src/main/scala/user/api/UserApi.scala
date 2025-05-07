@@ -1,6 +1,7 @@
 package user.api
 
 import auth.service.*
+import jwt.service.*
 import user.service.*
 import user.models.*
 import user.mapper.*
@@ -12,9 +13,10 @@ import sttp.tapir.swagger.bundle.SwaggerInterpreter
 import sttp.tapir.server.ziohttp.ZioHttpInterpreter
 import sttp.tapir.server.ServerEndpoint
 import sttp.tapir.generic.auto.*
-
+import java.time.Instant
 class UserApi(
   authService: AuthService,
+  jwtService: JwtService,
   userService: UserService,
   userResponseMapper: UserResponseMapper,
 ):
@@ -31,11 +33,10 @@ class UserApi(
     baseEndpoint
       .securityIn(auth.bearer[String]())
       .serverSecurityLogic { token =>
-        authService
+        jwtService
           .validateToken(token)
-          .map:
-            case Some(userId) => Right(userId)
-            case None => Left(ErrorResponse("Invalid or expired token"))
+          .map(userId => Right(userId))
+          .catchAll(_ => ZIO.succeed(Left(ErrorResponse("Invalid or expired token"))))
       }
 
   // Публичные эндпоинты
@@ -63,7 +64,7 @@ class UserApi(
                   ErrorResponse("User not found after registration")
                 )
             // Генерируем refresh token отдельно
-            refreshToken <- authService.createRefreshToken(accessToken.userId)
+            refreshToken <- jwtService.createRefreshToken(accessToken.userId, Instant.now())
             userResponse <- userResponseMapper.fromUser(user)
           yield AuthResponse(
             accessToken = accessToken.token,
@@ -103,7 +104,7 @@ class UserApi(
                   ErrorResponse("User not found")
                 )
             // Генерируем refresh token отдельно
-            refreshToken <- authService.createRefreshToken(accessToken.userId)
+            refreshToken <- jwtService.createRefreshToken(accessToken.userId, Instant.now())
             userResponse <- userResponseMapper.fromUser(user)
           yield AuthResponse(
             accessToken = accessToken.token,
@@ -128,7 +129,7 @@ class UserApi(
       .serverLogic { request =>
         val refresh =
           for
-            accessTokenOpt <- authService.refreshToken(request.refreshToken)
+            accessTokenOpt <- jwtService.refreshToken(request.refreshToken)
             accessToken <-
               ZIO
                 .fromOption(accessTokenOpt)
@@ -143,7 +144,7 @@ class UserApi(
                   ErrorResponse("User not found")
                 )
             // Генерируем новый refresh token
-            refreshToken <- authService.createRefreshToken(accessToken.userId)
+            refreshToken <- jwtService.createRefreshToken(accessToken.userId, Instant.now())
             userResponse <- userResponseMapper.fromUser(user)
           yield AuthResponse(
             accessToken = accessToken.token,
@@ -299,10 +300,11 @@ class UserApi(
     ZioHttpInterpreter().toHttp(allEndpoints)
 
 object UserApi:
-  val layer: URLayer[AuthService & UserService & UserResponseMapper, UserApi] =
+  val layer: URLayer[AuthService & JwtService & UserService & UserResponseMapper, UserApi] =
     ZLayer:
       for
         authService <- ZIO.service[AuthService]
+        jwtService <- ZIO.service[JwtService]
         userService <- ZIO.service[UserService]
         userResponseMapper <- ZIO.service[UserResponseMapper]
-      yield new UserApi(authService, userService, userResponseMapper)
+      yield new UserApi(authService, jwtService, userService, userResponseMapper)

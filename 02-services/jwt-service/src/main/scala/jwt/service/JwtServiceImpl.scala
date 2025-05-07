@@ -7,7 +7,9 @@ import user.models.UserId
 import java.time.Instant
 import pdi.jwt.{ JwtAlgorithm, JwtClaim, JwtZIOJson }
 import jwt.models.RefreshToken
-class JwtServiceImpl(jwtConfig: JwtConfig) extends JwtService:
+import jwt.repository.TokenRepository
+
+class JwtServiceImpl(jwtConfig: JwtConfig, tokenRepository: TokenRepository) extends JwtService:
   override def createAccessToken(
     userId: UserId,
     issuedAt: Instant = Instant.now(),
@@ -54,7 +56,7 @@ class JwtServiceImpl(jwtConfig: JwtConfig) extends JwtService:
           expiration = Some(expiresAt.toEpochMilli),
           issuedAt = Some(issuedAt.toEpochMilli),
         )
-      token <-
+      tokenString <-
         ZIO.attempt(
           JwtZIOJson.encode(
             claim,
@@ -62,7 +64,9 @@ class JwtServiceImpl(jwtConfig: JwtConfig) extends JwtService:
             JwtAlgorithm.HS256,
           )
         )
-    yield RefreshToken(token, expiresAt, userId)
+      refreshToken = RefreshToken(tokenString, expiresAt, userId)
+      _ <- tokenRepository.saveRefreshToken(refreshToken)
+    yield refreshToken
 
   override def validateToken(token: String): Task[UserId] =
     for
@@ -75,6 +79,27 @@ class JwtServiceImpl(jwtConfig: JwtConfig) extends JwtService:
       subject <- ZIO.fromOption(claim.subject).orElseFail(new Exception("No subject in token"))
     yield UserId(subject)
 
+  override def refreshToken(refreshTokenStr: String): Task[Option[AccessToken]] =
+    for
+      refreshTokenOpt <- tokenRepository.findByRefreshToken(refreshTokenStr)
+      result <-
+        refreshTokenOpt match
+          case Some(rToken) =>
+            for
+              _ <- tokenRepository.deleteByRefreshToken(refreshTokenStr)
+              accessToken <- createAccessToken(rToken.userId, Instant.now())
+            yield Some(accessToken)
+          case None =>
+            ZIO.succeed(None)
+    yield result
+
+  override def invalidateRefreshTokens(userId: UserId): Task[Unit] =
+    tokenRepository.deleteAllByUserId(userId)
+
 object JwtServiceImpl:
-  val layer: ZLayer[JwtConfig, Nothing, JwtService] =
-    ZLayer.fromFunction(JwtServiceImpl(_))
+  val layer: ZLayer[JwtConfig & TokenRepository, Nothing, JwtService] =
+    ZLayer:
+      for
+        jwtConfig <- ZIO.service[JwtConfig]
+        tokenRepository <- ZIO.service[TokenRepository]
+      yield JwtServiceImpl(jwtConfig, tokenRepository)

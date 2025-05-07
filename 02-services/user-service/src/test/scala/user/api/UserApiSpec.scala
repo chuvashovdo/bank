@@ -6,34 +6,72 @@ import user.service.*
 import user.models.*
 import user.mapper.*
 import auth.service.*
+import jwt.service.*
 import jwt.models.{ AccessToken, RefreshToken }
 import java.time.Instant
 import java.util.UUID
 
 object UserApiSpec extends ZIOSpecDefault:
 
-  // Мок AuthService
-  class MockAuthService extends AuthService:
-    var users =
+  // Мок JwtService
+  class MockJwtService extends JwtService:
+    var tokens =
       Map.empty[String, UserId]
     var refreshTokens =
       Map.empty[String, UserId]
 
-    override def validateToken(token: String): Task[Option[UserId]] =
-      ZIO.succeed(users.get(token))
+    override def createAccessToken(
+      userId: UserId,
+      issuedAt: Instant = Instant.now(),
+    ): Task[AccessToken] =
+      val token = s"access-token-${UUID.randomUUID().toString}"
+      tokens += (token -> userId)
+      val accessToken =
+        AccessToken(
+          token = token,
+          expiresAt = issuedAt.plusSeconds(3600),
+          userId = userId,
+        )
+      ZIO.succeed(accessToken)
 
+    override def createRefreshToken(
+      userId: UserId,
+      issuedAt: Instant = Instant.now(),
+    ): Task[RefreshToken] =
+      val token = s"refresh-token-${UUID.randomUUID().toString}"
+      refreshTokens += (token -> userId)
+      val refreshToken =
+        RefreshToken(
+          token = token,
+          expiresAt = issuedAt.plusSeconds(86400),
+          userId = userId,
+        )
+      ZIO.succeed(refreshToken)
+
+    override def validateToken(token: String): Task[UserId] =
+      tokens.get(token) match
+        case Some(userId) => ZIO.succeed(userId)
+        case None => ZIO.fail(new RuntimeException("Invalid token"))
+
+    override def refreshToken(token: String): Task[Option[AccessToken]] =
+      refreshTokens.get(token) match
+        case Some(userId) =>
+          for accessToken <- createAccessToken(userId)
+          yield Some(accessToken)
+        case None =>
+          ZIO.succeed(None)
+
+    override def invalidateRefreshTokens(userId: UserId): Task[Unit] =
+      ZIO.succeed:
+        refreshTokens = refreshTokens.filter((_, id) => id.value != userId.value)
+        tokens = tokens.filter((_, id) => id.value != userId.value)
+
+  // Мок AuthService
+  class MockAuthService(jwtService: JwtService) extends AuthService:
     override def login(email: String, password: String): Task[Option[AccessToken]] =
       if email == "valid@example.com" && password == "validPassword" then
         val userId = UserId("user-123")
-        val token = "valid-jwt-token"
-        users += (token -> userId)
-        val accessToken =
-          AccessToken(
-            token = token,
-            userId = userId,
-            expiresAt = Instant.now().plusSeconds(3600),
-          )
-        ZIO.succeed(Some(accessToken))
+        jwtService.createAccessToken(userId, Instant.now()).map(Some(_))
       else ZIO.succeed(None)
 
     override def register(
@@ -45,46 +83,10 @@ object UserApiSpec extends ZIOSpecDefault:
       if email == "existing@example.com" then ZIO.fail(new RuntimeException("User already exists"))
       else
         val userId = UserId("new-user-456")
-        val token = "new-jwt-token"
-        users += (token -> userId)
-        val accessToken =
-          AccessToken(
-            token = token,
-            userId = userId,
-            expiresAt = Instant.now().plusSeconds(3600),
-          )
-        ZIO.succeed(accessToken)
-
-    override def refreshToken(token: String): Task[Option[AccessToken]] =
-      refreshTokens.get(token) match
-        case Some(userId) =>
-          val newToken = "refreshed-token"
-          users += (newToken -> userId)
-          val accessToken =
-            AccessToken(
-              token = newToken,
-              userId = userId,
-              expiresAt = Instant.now().plusSeconds(3600),
-            )
-          ZIO.succeed(Some(accessToken))
-        case None =>
-          ZIO.succeed(None)
-
-    override def createRefreshToken(userId: UserId): Task[RefreshToken] =
-      val token = s"refresh-token-${UUID.randomUUID().toString}"
-      refreshTokens += (token -> userId)
-      ZIO.succeed(
-        RefreshToken(
-          token = token,
-          userId = userId,
-          expiresAt = Instant.now().plusSeconds(86400),
-        )
-      )
+        jwtService.createAccessToken(userId, Instant.now())
 
     override def logout(userId: UserId): Task[Unit] =
-      ZIO.succeed:
-        refreshTokens = refreshTokens.filter((_, id) => id.value != userId.value)
-        users = users.filter((_, id) => id.value != userId.value)
+      jwtService.invalidateRefreshTokens(userId)
 
   // Мок UserService
   class MockUserService extends UserService:
@@ -183,16 +185,27 @@ object UserApiSpec extends ZIOSpecDefault:
             true
           case None => false
 
-  val authServiceLayer =
-    ZLayer.succeed(new MockAuthService)
-  val userServiceLayer =
+  // Подготавливаем слои для тестового окружения
+  val mockJwtService =
+    new MockJwtService
+  val mockJwtServiceLayer: ULayer[JwtService] =
+    ZLayer.succeed(mockJwtService)
+  val mockAuthServiceLayer: ULayer[AuthService] =
+    ZLayer.succeed(new MockAuthService(mockJwtService))
+  val mockUserServiceLayer: ULayer[UserService] =
     ZLayer.succeed(new MockUserService)
-  val userResponseMapperLayer =
+  val mockUserResponseMapperLayer: ULayer[UserResponseMapper] =
     UserResponseMapperImpl.layer
-  val userApiLayer =
-    UserApi.layer
-  val testEnvLayer: ZLayer[Any, Nothing, UserApi] =
-    (authServiceLayer ++ userServiceLayer ++ userResponseMapperLayer) >>> userApiLayer
+
+  // Создаем комбинированный слой для всех наших тестов
+  val testLayer: ZLayer[Any, Nothing, UserApi & AuthService & UserService & JwtService & UserResponseMapper] =
+    ZLayer.make[UserApi & AuthService & UserService & JwtService & UserResponseMapper](
+      mockAuthServiceLayer,
+      mockJwtServiceLayer,
+      mockUserServiceLayer,
+      mockUserResponseMapperLayer,
+      UserApi.layer,
+    )
 
   def spec =
     suite("UserApi")(
@@ -203,29 +216,27 @@ object UserApiSpec extends ZIOSpecDefault:
       test("register endpoint implementation functions correctly") {
         for
           api <- ZIO.service[UserApi]
-          authService <- ZIO.service[AuthService].provide(authServiceLayer)
-          userService <- ZIO.service[UserService].provide(userServiceLayer)
+          authService <- ZIO.service[AuthService]
+          userService <- ZIO.service[UserService]
+          jwtService <- ZIO.service[JwtService]
 
           result <-
-            ZIO.scoped {
-              for
-                accessToken <-
-                  authService.register("new@example.com", "password123", Some("New"), Some("User"))
-                userOpt <- userService.findUserById(accessToken.userId)
-                user <- ZIO.fromOption(userOpt).orElseFail(new RuntimeException("User not found"))
-                refreshToken <- authService.createRefreshToken(accessToken.userId)
-                userResponse <-
-                  ZIO
-                    .service[UserResponseMapper]
-                    .provide(userResponseMapperLayer)
-                    .flatMap(_.fromUser(user))
-              yield UserResponse(
-                id = user.id.value,
-                email = user.email,
-                firstName = user.firstName,
-                lastName = user.lastName,
-              )
-            }
+            for
+              accessToken <-
+                authService.register("new@example.com", "password123", Some("New"), Some("User"))
+              userOpt <- userService.findUserById(accessToken.userId)
+              user <- ZIO.fromOption(userOpt).orElseFail(new RuntimeException("User not found"))
+              refreshToken <- jwtService.createRefreshToken(accessToken.userId, Instant.now())
+              userResponse <-
+                ZIO
+                  .service[UserResponseMapper]
+                  .flatMap(_.fromUser(user))
+            yield UserResponse(
+              id = user.id.value,
+              email = user.email,
+              firstName = user.firstName,
+              lastName = user.lastName,
+            )
         yield assertTrue(
           result.email == "new@example.com",
           result.firstName == Some("New"),
@@ -235,30 +246,28 @@ object UserApiSpec extends ZIOSpecDefault:
       test("login implementation functions correctly") {
         for
           api <- ZIO.service[UserApi]
-          authService <- ZIO.service[AuthService].provide(authServiceLayer)
-          userService <- ZIO.service[UserService].provide(userServiceLayer)
+          authService <- ZIO.service[AuthService]
+          userService <- ZIO.service[UserService]
+          jwtService <- ZIO.service[JwtService]
 
           result <-
-            ZIO.scoped {
-              for
-                accessTokenOpt <- authService.login("valid@example.com", "validPassword")
-                accessToken <-
-                  ZIO
-                    .fromOption(accessTokenOpt)
-                    .orElseFail(new RuntimeException("Invalid credentials"))
-                userOpt <- userService.findUserById(accessToken.userId)
-                user <- ZIO.fromOption(userOpt).orElseFail(new RuntimeException("User not found"))
-                refreshToken <- authService.createRefreshToken(accessToken.userId)
-                userResponse <-
-                  ZIO
-                    .service[UserResponseMapper]
-                    .provide(userResponseMapperLayer)
-                    .flatMap(_.fromUser(user))
-              yield (accessToken, user, userResponse)
-            }
+            for
+              accessTokenOpt <- authService.login("valid@example.com", "validPassword")
+              accessToken <-
+                ZIO
+                  .fromOption(accessTokenOpt)
+                  .orElseFail(new RuntimeException("Invalid credentials"))
+              userOpt <- userService.findUserById(accessToken.userId)
+              user <- ZIO.fromOption(userOpt).orElseFail(new RuntimeException("User not found"))
+              refreshToken <- jwtService.createRefreshToken(accessToken.userId, Instant.now())
+              userResponse <-
+                ZIO
+                  .service[UserResponseMapper]
+                  .flatMap(_.fromUser(user))
+            yield (accessToken, user, userResponse)
           (accessToken, user, userResponse) = result
         yield assertTrue(
-          accessToken.token == "valid-jwt-token",
+          accessToken.token.nonEmpty,
           userResponse.email == "valid@example.com",
           userResponse.firstName == Some("Test"),
           userResponse.lastName == Some("User"),
@@ -267,17 +276,15 @@ object UserApiSpec extends ZIOSpecDefault:
       test("getCurrentUser implementation functions correctly") {
         for
           api <- ZIO.service[UserApi]
-          userService <- ZIO.service[UserService].provide(userServiceLayer)
-          responseMapper <- ZIO.service[UserResponseMapper].provide(userResponseMapperLayer)
+          userService <- ZIO.service[UserService]
+          responseMapper <- ZIO.service[UserResponseMapper]
 
           result <-
-            ZIO.scoped {
-              for
-                userOpt <- userService.findUserById(UserId("user-123"))
-                user <- ZIO.fromOption(userOpt).orElseFail(new RuntimeException("User not found"))
-                userResponse <- responseMapper.fromUser(user)
-              yield userResponse
-            }
+            for
+              userOpt <- userService.findUserById(UserId("user-123"))
+              user <- ZIO.fromOption(userOpt).orElseFail(new RuntimeException("User not found"))
+              userResponse <- responseMapper.fromUser(user)
+            yield userResponse
         yield assertTrue(
           result.id == "user-123",
           result.email == "valid@example.com",
@@ -288,20 +295,18 @@ object UserApiSpec extends ZIOSpecDefault:
       test("updateUser implementation functions correctly") {
         for
           api <- ZIO.service[UserApi]
-          userService <- ZIO.service[UserService].provide(userServiceLayer)
-          responseMapper <- ZIO.service[UserResponseMapper].provide(userResponseMapperLayer)
+          userService <- ZIO.service[UserService]
+          responseMapper <- ZIO.service[UserResponseMapper]
 
           result <-
-            ZIO.scoped {
-              for
-                userOpt <- userService.updateUser(UserId("user-123"), Some("Updated"), Some("Name"))
-                user <-
-                  ZIO
-                    .fromOption(userOpt)
-                    .orElseFail(new RuntimeException("User not found or could not be updated"))
-                userResponse <- responseMapper.fromUser(user)
-              yield userResponse
-            }
+            for
+              userOpt <- userService.updateUser(UserId("user-123"), Some("Updated"), Some("Name"))
+              user <-
+                ZIO
+                  .fromOption(userOpt)
+                  .orElseFail(new RuntimeException("User not found or could not be updated"))
+              userResponse <- responseMapper.fromUser(user)
+            yield userResponse
         yield assertTrue(
           result.id == "user-123",
           result.firstName == Some("Updated"),
@@ -311,7 +316,7 @@ object UserApiSpec extends ZIOSpecDefault:
       test("changePassword implementation functions correctly") {
         for
           api <- ZIO.service[UserApi]
-          userService <- ZIO.service[UserService].provide(userServiceLayer)
+          userService <- ZIO.service[UserService]
 
           result <-
             userService.changePassword(UserId("user-123"), "validPassword", "newSecurePassword")
@@ -322,7 +327,8 @@ object UserApiSpec extends ZIOSpecDefault:
       test("logout implementation functions correctly") {
         for
           api <- ZIO.service[UserApi]
-          authService <- ZIO.service[AuthService].provide(authServiceLayer)
+          authService <- ZIO.service[AuthService]
+          jwtService <- ZIO.service[JwtService]
 
           accessTokenOpt <- authService.login("valid@example.com", "validPassword")
           accessToken <-
@@ -330,9 +336,10 @@ object UserApiSpec extends ZIOSpecDefault:
 
           _ <- authService.logout(accessToken.userId)
 
-          validateResult <- authService.validateToken(accessToken.token)
+          // Проверим через JwtService - валидация должна завершиться ошибкой для недействительного токена
+          result <- jwtService.validateToken(accessToken.token).exit
         yield assertTrue(
-          validateResult.isEmpty
+          result.isFailure
         )
       },
-    ).provide(testEnvLayer)
+    ).provide(testLayer)

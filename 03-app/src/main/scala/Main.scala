@@ -57,9 +57,17 @@ object Main extends ZIOAppDefault:
   val jwtConfigLayer =
     JwtConfigImpl.layer
 
+  val tokenRepositoryLayer =
+    ZLayer.make[TokenRepository](
+      TokenRepositoryImpl.layer,
+      DbConfigImpl.layer,
+      QuillContext.dataSourceLayer,
+    )
+
   val jwtServiceLayer =
     ZLayer.make[JwtService](
       JwtServiceImpl.layer,
+      tokenRepositoryLayer,
       jwtConfigLayer,
     )
 
@@ -72,25 +80,18 @@ object Main extends ZIOAppDefault:
       QuillContext.dataSourceLayer,
     )
 
-  val tokenRepositoryLayer =
-    ZLayer.make[TokenRepository](
-      TokenRepositoryImpl.layer,
-      DbConfigImpl.layer,
-      QuillContext.dataSourceLayer,
-    )
-
   val authServiceLayer =
     ZLayer.make[AuthService](
       AuthServiceImpl.layer,
       jwtServiceLayer,
       userServiceLayer,
-      tokenRepositoryLayer,
     )
 
   val userApiLayer =
     ZLayer.make[UserApi](
       UserResponseMapperImpl.layer,
       UserApi.layer,
+      jwtServiceLayer,
       authServiceLayer,
       userServiceLayer,
     )

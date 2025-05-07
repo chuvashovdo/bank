@@ -5,7 +5,8 @@ import zio.test.*
 import jwt.config.JwtConfig
 import user.models.UserId
 import java.time.Instant
-
+import jwt.models.RefreshToken
+import jwt.repository.TokenRepository
 object JwtServiceSpec extends ZIOSpecDefault:
   // Создаем мок JwtConfig
   class MockJwtConfig extends JwtConfig:
@@ -27,9 +28,25 @@ object JwtServiceSpec extends ZIOSpecDefault:
   // Тестовый слой
   val mockJwtConfigLayer =
     ZLayer.succeed(new MockJwtConfig)
+  // Моковое хранилище для refresh-токенов
+  val mockTokenRepositoryLayer =
+    ZLayer.succeed:
+      new TokenRepository:
+        override def saveRefreshToken(token: RefreshToken): Task[Unit] =
+          ZIO.unit
+        override def findByRefreshToken(tokenStr: String): Task[Option[RefreshToken]] =
+          ZIO.succeed(None)
+        override def deleteByRefreshToken(token: String): Task[Unit] =
+          ZIO.unit
+        override def deleteAllByUserId(userId: UserId): Task[Unit] =
+          ZIO.unit
+        override def cleanExpiredTokens(): Task[Unit] =
+          ZIO.unit
+
   val testJwtServiceLayer =
     ZLayer.make[JwtService](
       mockJwtConfigLayer,
+      mockTokenRepositoryLayer,
       JwtServiceImpl.layer,
     )
 
@@ -70,12 +87,10 @@ object JwtServiceSpec extends ZIOSpecDefault:
       test("validateToken fails for expired token") {
         for
           jwtService <- ZIO.service[JwtService]
-          config <- ZIO.service[JwtConfig]
+          config <- ZIO.service[MockJwtConfig]
           userId = UserId("test-user-id")
-          // Создаем токен со сроком действия в прошлом
-          // чтобы имитировать истекший токен
           now = Instant.now()
-          expiredTime = now.minusSeconds(3600) // час назад
+          expiredTime = now.minusSeconds(3600)
           secretKey <- config.secretKey
           issuer <- config.issuer
           audience <- config.audience
@@ -86,16 +101,13 @@ object JwtServiceSpec extends ZIOSpecDefault:
                 issuer = Some(issuer),
                 audience = Some(Set(audience)),
                 subject = Some(userId.value),
-                expiration = Some(expiredTime.toEpochMilli / 1000), // в секундах
+                expiration = Some(expiredTime.toEpochMilli / 1000),
                 issuedAt = Some(expiredTime.minusSeconds(3600).toEpochMilli / 1000),
               )
           token = pdi.jwt.JwtZIOJson.encode(claim, secretKey, pdi.jwt.JwtAlgorithm.HS256)
           result <- jwtService.validateToken(token).exit
         yield assertTrue(result.isFailure)
-      }.provide(
-        ZLayer.succeed(new MockJwtConfig),
-        JwtServiceImpl.layer,
-      ),
+      }.provide(testJwtServiceLayer, mockJwtConfigLayer),
       test("validateToken fails for invalid token") {
         for
           jwtService <- ZIO.service[JwtService]
