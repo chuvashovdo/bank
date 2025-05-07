@@ -12,9 +12,6 @@ trait AuthService:
     firstName: Option[String],
     lastName: Option[String],
   ): Task[AccessToken]
-  def validateToken(token: String): Task[Option[UserId]]
-  def createRefreshToken(userId: UserId): Task[RefreshToken]
-  def refreshToken(refreshToken: String): Task[Option[AccessToken]]
   def logout(userId: UserId): Task[Unit]
 
 object AuthService:
@@ -27,11 +24,5 @@ object AuthService:
     lastName: Option[String],
   ): RIO[AuthService, AccessToken] =
     ZIO.serviceWithZIO[AuthService](_.register(email, password, firstName, lastName))
-  def validateToken(token: String): RIO[AuthService, Option[UserId]] =
-    ZIO.serviceWithZIO[AuthService](_.validateToken(token))
-  def createRefreshToken(userId: UserId): RIO[AuthService, RefreshToken] =
-    ZIO.serviceWithZIO[AuthService](_.createRefreshToken(userId))
-  def refreshToken(refreshToken: String): RIO[AuthService, Option[AccessToken]] =
-    ZIO.serviceWithZIO[AuthService](_.refreshToken(refreshToken))
   def logout(userId: UserId): RIO[AuthService, Unit] =
     ZIO.serviceWithZIO[AuthService](_.logout(userId))
