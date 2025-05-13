@@ -10,11 +10,19 @@ object UserSpec extends ZIOSpecDefault:
       test("User should correctly serialize to JSON and back") {
         val user =
           User(
-            id = UserId("test-1234"),
-            email = "test@example.com",
+            id =
+              UserId("test-1234").getOrElse(
+                throw new RuntimeException("Invalid UserId in test data")
+              ),
+            email =
+              Email("test@example.com").getOrElse(
+                throw new RuntimeException("Invalid Email in test data")
+              ),
             passwordHash = "hashed-password-123",
-            firstName = Some("John"),
-            lastName = Some("Doe"),
+            firstName =
+              Some(FirstName("John").getOrElse(throw new RuntimeException("Invalid FirstName"))),
+            lastName =
+              Some(LastName("Doe").getOrElse(throw new RuntimeException("Invalid LastName"))),
             isActive = true,
           )
 
@@ -25,7 +33,10 @@ object UserSpec extends ZIOSpecDefault:
         assertTrue(parsedUser.map(_.equals(user)).getOrElse(false))
       },
       test("UserId should correctly serialize to JSON and back") {
-        val userId = UserId("user-id-12345")
+        val userId =
+          UserId("user-id-12345").getOrElse(
+            throw new RuntimeException("Invalid UserId in test data")
+          )
         val json = userId.toJson
         val parsedId = json.fromJson[UserId]
 
@@ -36,59 +47,62 @@ object UserSpec extends ZIOSpecDefault:
       test("Users with same values should be equal") {
         val user1 =
           User(
-            id = UserId("same-id"),
-            email = "same@example.com",
+            id = UserId("same-id").getOrElse(throw new RuntimeException("Invalid UserId")),
+            email =
+              Email("same@example.com").getOrElse(throw new RuntimeException("Invalid Email")),
             passwordHash = "same-hash",
-            firstName = Some("Same"),
-            lastName = Some("Name"),
+            firstName =
+              Some(FirstName("Same").getOrElse(throw new RuntimeException("Invalid FirstName"))),
+            lastName =
+              Some(LastName("Name").getOrElse(throw new RuntimeException("Invalid LastName"))),
             isActive = true,
           )
 
         val user2 =
           User(
-            id = UserId("same-id"),
-            email = "same@example.com",
+            id = UserId("same-id").getOrElse(throw new RuntimeException("Invalid UserId")),
+            email =
+              Email("same@example.com").getOrElse(throw new RuntimeException("Invalid Email")),
             passwordHash = "same-hash",
-            firstName = Some("Same"),
-            lastName = Some("Name"),
+            firstName =
+              Some(FirstName("Same").getOrElse(throw new RuntimeException("Invalid FirstName"))),
+            lastName =
+              Some(LastName("Name").getOrElse(throw new RuntimeException("Invalid LastName"))),
             isActive = true,
           )
 
+        assertTrue(user1.equals(user2)) &&
         assertTrue(user1.id.value == user2.id.value) &&
-        assertTrue(user1.email == user2.email) &&
-        assertTrue(user1.passwordHash == user2.passwordHash) &&
-        assertTrue(user1.firstName == user2.firstName) &&
-        assertTrue(user1.lastName == user2.lastName) &&
-        assertTrue(user1.isActive == user2.isActive)
+        assertTrue(user1.email.value == user2.email.value) &&
+        assertTrue(user1.firstName.map(_.value) == user2.firstName.map(_.value)) &&
+        assertTrue(user1.lastName.map(_.value) == user2.lastName.map(_.value))
       },
       test("Users with different values should not be equal") {
         val user1 =
           User(
-            id = UserId("id-1"),
-            email = "user1@example.com",
+            id = UserId("id-1").getOrElse(throw new RuntimeException("Invalid UserId")),
+            email =
+              Email("user1@example.com").getOrElse(throw new RuntimeException("Invalid Email")),
             passwordHash = "hash1",
-            firstName = Some("John"),
-            lastName = Some("Doe"),
+            firstName =
+              Some(FirstName("John").getOrElse(throw new RuntimeException("Invalid FirstName"))),
+            lastName =
+              Some(LastName("Doe").getOrElse(throw new RuntimeException("Invalid LastName"))),
             isActive = true,
           )
 
         val user2 =
           User(
-            id = UserId("id-2"),
-            email = "user2@example.com",
+            id = UserId("id-2").getOrElse(throw new RuntimeException("Invalid UserId")),
+            email =
+              Email("user2@example.com").getOrElse(throw new RuntimeException("Invalid Email")),
             passwordHash = "hash2",
-            firstName = Some("Jane"),
-            lastName = Some("Smith"),
+            firstName =
+              Some(FirstName("Jane").getOrElse(throw new RuntimeException("Invalid FirstName"))),
+            lastName =
+              Some(LastName("Smith").getOrElse(throw new RuntimeException("Invalid LastName"))),
             isActive = false,
           )
-
-        assertTrue {
-          user1.id.value != user2.id.value ||
-          user1.email != user2.email ||
-          user1.passwordHash != user2.passwordHash ||
-          user1.firstName != user2.firstName ||
-          user1.lastName != user2.lastName ||
-          user1.isActive != user2.isActive
-        }
+        assertTrue(!user1.equals(user2))
       },
     )

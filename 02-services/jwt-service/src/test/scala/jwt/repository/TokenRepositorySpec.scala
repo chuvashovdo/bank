@@ -4,6 +4,7 @@ import zio.*
 import zio.test.*
 import user.models.UserId
 import jwt.models.RefreshToken
+import jwt.models.JwtRefreshToken
 import java.time.Instant
 import java.util.UUID
 import io.getquill.*
@@ -73,14 +74,23 @@ object TokenRepositorySpec extends ZIOSpecDefault:
     commonDependenciesLayer >>> (tokenRepoLayer ++ ZLayer
       .environment[Quill.Postgres[SnakeCase]])
 
+  // Вспомогательные функции для создания кастомных типов
+  private def unsafeUserId(id: String): UserId =
+    UserId(id).getOrElse(throw new RuntimeException(s"Invalid UserId in test setup: $id"))
+
+  private def unsafeJwtRefreshToken(token: String): JwtRefreshToken =
+    JwtRefreshToken(token).getOrElse(
+      throw new RuntimeException(s"Invalid JwtRefreshToken in test setup: $token")
+    )
+
   def createTestRefreshToken(
     userId: String = "test-user",
     expireInSeconds: Long = 3600,
   ): RefreshToken =
     RefreshToken(
-      token = s"token-${UUID.randomUUID()}",
+      token = unsafeJwtRefreshToken(s"token-${UUID.randomUUID()}"),
       expiresAt = Instant.now().plusSeconds(expireInSeconds),
-      userId = UserId(userId),
+      userId = unsafeUserId(userId),
     )
 
   def spec =
@@ -93,17 +103,16 @@ object TokenRepositorySpec extends ZIOSpecDefault:
           retrieved <- repo.findByRefreshToken(token.token)
         yield assertTrue(
           retrieved.isDefined,
-          retrieved.exists(_.token == token.token), // Сравниваем по значению токена
-          retrieved.exists(_.userId.value == token.userId.value), // Сравниваем по ID пользователя
-          // Проверяем, что время истечения близко (в пределах секунды)
+          retrieved.exists(_.token.value == token.token.value),
+          retrieved.exists(_.userId.value == token.userId.value),
           retrieved.exists(_.expiresAt.getEpochSecond == token.expiresAt.getEpochSecond),
         )
       },
       test("findByRefreshToken should return None for non-existent token") {
         for
           repo <- ZIO.service[TokenRepository]
-          nonExistentToken = "non-existent-token"
-          retrieved <- repo.findByRefreshToken(nonExistentToken)
+          nonExistentJwtToken = unsafeJwtRefreshToken("non-existent-token")
+          retrieved <- repo.findByRefreshToken(nonExistentJwtToken)
         yield assertTrue(retrieved.isEmpty)
       },
       test("findByRefreshToken should return None for expired token") {
@@ -131,10 +140,10 @@ object TokenRepositorySpec extends ZIOSpecDefault:
       test("deleteAllByUserId should remove all user tokens") {
         for
           repo <- ZIO.service[TokenRepository]
-          userId = "multi-token-user"
-          userIdObj = UserId(userId)
-          token1 = createTestRefreshToken(userId)
-          token2 = createTestRefreshToken(userId)
+          userIdString = "multi-token-user"
+          userIdObj = unsafeUserId(userIdString)
+          token1 = createTestRefreshToken(userIdString)
+          token2 = createTestRefreshToken(userIdString)
           otherUserToken = createTestRefreshToken("other-user")
           _ <- repo.saveRefreshToken(token1)
           _ <- repo.saveRefreshToken(token2)

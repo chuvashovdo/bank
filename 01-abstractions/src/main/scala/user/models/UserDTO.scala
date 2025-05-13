@@ -1,12 +1,13 @@
 package user.models
 
+import jwt.models.{ JwtAccessToken, JwtRefreshToken }
 import zio.json.*
 
 final case class RegisterUserRequest(
-  email: String,
-  password: String,
-  firstName: Option[String],
-  lastName: Option[String],
+  email: Email,
+  password: Password,
+  firstName: Option[FirstName],
+  lastName: Option[LastName],
 )
 
 object RegisterUserRequest:
@@ -14,8 +15,8 @@ object RegisterUserRequest:
     DeriveJsonCodec.gen[RegisterUserRequest]
 
 final case class LoginRequest(
-  email: String,
-  password: String,
+  email: Email,
+  password: Password,
 )
 
 object LoginRequest:
@@ -23,8 +24,8 @@ object LoginRequest:
     DeriveJsonCodec.gen[LoginRequest]
 
 final case class UpdateUserRequest(
-  firstName: Option[String],
-  lastName: Option[String],
+  firstName: Option[FirstName],
+  lastName: Option[LastName],
 )
 
 object UpdateUserRequest:
@@ -32,8 +33,8 @@ object UpdateUserRequest:
     DeriveJsonCodec.gen[UpdateUserRequest]
 
 final case class ChangePasswordRequest(
-  oldPassword: String,
-  newPassword: String,
+  oldPassword: Password,
+  newPassword: Password,
 )
 
 object ChangePasswordRequest:
@@ -42,9 +43,9 @@ object ChangePasswordRequest:
 
 final case class UserResponse(
   id: String,
-  email: String,
-  firstName: Option[String],
-  lastName: Option[String],
+  email: Email,
+  firstName: Option[FirstName],
+  lastName: Option[LastName],
 )
 
 object UserResponse:
@@ -52,8 +53,8 @@ object UserResponse:
     DeriveJsonCodec.gen[UserResponse]
 
 final case class AuthResponse(
-  accessToken: String,
-  refreshToken: String,
+  accessToken: JwtAccessToken,
+  refreshToken: JwtRefreshToken,
   expiresAt: Long,
   user: UserResponse,
 )
@@ -63,7 +64,7 @@ object AuthResponse:
     DeriveJsonCodec.gen[AuthResponse]
 
 final case class RefreshTokenRequest(
-  refreshToken: String
+  refreshToken: JwtRefreshToken
 )
 
 object RefreshTokenRequest:

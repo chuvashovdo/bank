@@ -14,8 +14,19 @@ import io.getquill.jdbczio.Quill
 import java.util.UUID
 import org.slf4j.LoggerFactory
 import ch.qos.logback.classic.{ Level, Logger }
+import user.models.{ Email, FirstName, LastName }
 
 object UserRepositorySpec extends ZIOSpecDefault:
+  // Хелперы для создания кастомных типов в тестах/моках
+  private def unsafeUserId(id: String): UserId =
+    UserId(id).getOrElse(throw new RuntimeException("Invalid UserId in test setup"))
+  private def unsafeEmail(email: String): Email =
+    Email(email).getOrElse(throw new RuntimeException("Invalid Email in test setup"))
+  private def unsafeFirstName(name: String): FirstName =
+    FirstName(name).getOrElse(throw new RuntimeException("Invalid FirstName in test setup"))
+  private def unsafeLastName(name: String): LastName =
+    LastName(name).getOrElse(throw new RuntimeException("Invalid LastName in test setup"))
+
   // Подавляем логи от HikariCP и Quill
   locally:
     val rootLogger = LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME).asInstanceOf[Logger]
@@ -63,13 +74,13 @@ object UserRepositorySpec extends ZIOSpecDefault:
 
   class MockUserEntityMapper extends UserEntityMapper:
     override def toUser(userEntity: UserEntity): Task[User] =
-      ZIO.succeed:
+      ZIO.attempt:
         User(
-          id = UserId(userEntity.id),
-          email = userEntity.email,
+          id = unsafeUserId(userEntity.id),
+          email = unsafeEmail(userEntity.email),
           passwordHash = userEntity.passwordHash,
-          firstName = userEntity.firstName,
-          lastName = userEntity.lastName,
+          firstName = userEntity.firstName.map(unsafeFirstName),
+          lastName = userEntity.lastName.map(unsafeLastName),
           isActive = userEntity.isActive,
         )
     override def fromUser(
@@ -80,10 +91,10 @@ object UserRepositorySpec extends ZIOSpecDefault:
       ZIO.succeed:
         UserEntity(
           id = user.id.value,
-          email = user.email,
+          email = user.email.value,
           passwordHash = user.passwordHash,
-          firstName = user.firstName,
-          lastName = user.lastName,
+          firstName = user.firstName.map(_.value),
+          lastName = user.lastName.map(_.value),
           isActive = user.isActive,
           createdAt = createdAt,
           updatedAt = updatedAt,
@@ -124,28 +135,12 @@ object UserRepositorySpec extends ZIOSpecDefault:
     (commonDependenciesLayer ++ mapperLayer) >>> (userRepoLayer ++ ZLayer
       .environment[Quill.Postgres[SnakeCase] & UserEntityMapper])
 
-  def createTestUser(
-    id: String = "test-user",
-    email: String = "test@test.com",
-    passwordHash: String = "password",
-    firstName: Option[String] = Some("Test"),
-    lastName: Option[String] = Some("User"),
-  ): User =
-    User(
-      id = UserId(id),
-      email = email,
-      passwordHash = passwordHash,
-      firstName = firstName,
-      lastName = lastName,
-      isActive = true,
-    )
-
   def spec =
     suite("UserRepository")(
       test("findById should return None for non-existent user") {
         for
           repo <- ZIO.service[UserRepository]
-          user <- repo.findById(UserId("non-existent"))
+          user <- repo.findById(unsafeUserId("non-existent"))
         yield assertTrue(user.isEmpty)
       },
       test("create and findById should work correctly") {
@@ -153,25 +148,25 @@ object UserRepositorySpec extends ZIOSpecDefault:
           repo <- ZIO.service[UserRepository]
           createdUser <-
             repo.create("test@example.com", "hashedPassword", Some("Test"), Some("User"))
-          foundUser <- repo.findById(createdUser.id)
+          foundUserOpt <- repo.findById(createdUser.id)
         yield assertTrue {
-          foundUser.isDefined &&
-          foundUser.get.id.value == createdUser.id.value &&
-          foundUser.get.email == "test@example.com" &&
-          foundUser.get.firstName == Some("Test") &&
-          foundUser.get.lastName == Some("User")
+          foundUserOpt.isDefined &&
+          foundUserOpt.get.id.equals(createdUser.id) &&
+          foundUserOpt.get.email.value == "test@example.com" &&
+          foundUserOpt.get.firstName.map(_.value) == Some("Test") &&
+          foundUserOpt.get.lastName.map(_.value) == Some("User")
         }
       },
       test("findByEmail should return user by email") {
         for
           repo <- ZIO.service[UserRepository]
           _ <- repo.create("email_test@example.com", "password", Some("Email"), Some("Test"))
-          user <- repo.findByEmail("email_test@example.com")
+          userOpt <- repo.findByEmail("email_test@example.com")
         yield assertTrue {
-          user.isDefined &&
-          user.get.email == "email_test@example.com" &&
-          user.get.firstName == Some("Email") &&
-          user.get.lastName == Some("Test")
+          userOpt.isDefined &&
+          userOpt.get.email.value == "email_test@example.com" &&
+          userOpt.get.firstName.map(_.value) == Some("Email") &&
+          userOpt.get.lastName.map(_.value) == Some("Test")
         }
       },
       test("update should modify user properties") {
@@ -183,11 +178,11 @@ object UserRepositorySpec extends ZIOSpecDefault:
           retrievedUser <- repo.findById(createdUser.id)
         yield assertTrue {
           updatedUserOpt.isDefined &&
-          updatedUserOpt.get.firstName == Some("After") &&
-          updatedUserOpt.get.lastName == Some("Updated") &&
+          updatedUserOpt.get.firstName.map(_.value) == Some("After") &&
+          updatedUserOpt.get.lastName.map(_.value) == Some("Updated") &&
           retrievedUser.isDefined &&
-          retrievedUser.get.firstName == Some("After") &&
-          retrievedUser.get.lastName == Some("Updated")
+          retrievedUser.get.firstName.map(_.value) == Some("After") &&
+          retrievedUser.get.lastName.map(_.value) == Some("Updated")
         }
       },
       test("updatePassword should change password") {
@@ -219,7 +214,7 @@ object UserRepositorySpec extends ZIOSpecDefault:
       test("operations should return appropriate results for non-existent users") {
         for
           repo <- ZIO.service[UserRepository]
-          nonExistentId = UserId("does-not-exist")
+          nonExistentId = unsafeUserId("does-not-exist")
           updateResult <- repo.update(nonExistentId, Some("First"), Some("Last"))
           passwordResult <- repo.updatePassword(nonExistentId, "newPassword")
           deactivateResult <- repo.deactivate(nonExistentId)

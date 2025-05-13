@@ -4,24 +4,25 @@ import jwt.entity.RefreshTokenEntity
 import zio.*
 import io.getquill.*
 import io.getquill.jdbczio.Quill
-import jwt.models.RefreshToken
+import jwt.models.{ RefreshToken, JwtRefreshToken }
 import user.models.UserId
 import java.time.Instant
 import java.util.UUID
+import common.errors.ValidationError
 
 class TokenRepositoryImpl(quill: Quill.Postgres[SnakeCase]) extends TokenRepository:
   import quill.*
 
   inline given tokenSchemaMeta: SchemaMeta[RefreshTokenEntity] =
-    schemaMeta("refresh_tokens")
+    schemaMeta[RefreshTokenEntity]("refresh_tokens")
 
   private def createRefreshTokenEntity(
     id: String,
     userId: UserId,
-    refreshToken: String,
+    refreshToken: JwtRefreshToken,
     expiresAt: Instant,
   ): Task[RefreshTokenEntity] =
-    ZIO.succeed(RefreshTokenEntity(id, userId.value, refreshToken, expiresAt, Instant.now()))
+    ZIO.succeed(RefreshTokenEntity(id, userId.value, refreshToken.value, expiresAt, Instant.now()))
 
   override def saveRefreshToken(refreshToken: RefreshToken): Task[Unit] =
     for
@@ -38,25 +39,48 @@ class TokenRepositoryImpl(quill: Quill.Postgres[SnakeCase]) extends TokenReposit
         }).unit
     yield ()
 
-  override def findByRefreshToken(token: String): Task[Option[RefreshToken]] =
+  override def findByRefreshToken(token: JwtRefreshToken): Task[Option[RefreshToken]] =
     run {
       quote:
         query[RefreshTokenEntity].filter { t =>
-          t.refreshToken == lift(token) &&
+          t.refreshToken == lift(token.value) &&
           infix"${t.expiresAt} > ${lift(java.time.Instant.now())}".as[Boolean]
         }
-    }.map:
-      _.headOption.map(entity =>
-        RefreshToken(
-          token = entity.refreshToken,
-          expiresAt = entity.expiresAt,
-          userId = UserId(entity.userId),
-        )
-      )
+    }.map(_.headOption)
+      .flatMap:
+        case Some(entity: RefreshTokenEntity) =>
+          val refreshTokenEither: Either[ValidationError, JwtRefreshToken] =
+            JwtRefreshToken(entity.refreshToken)
+          val validatedTokenZIO: Task[JwtRefreshToken] =
+            ZIO
+              .fromEither(refreshTokenEither)
+              .mapError { err =>
+                new IllegalArgumentException(
+                  s"Invalid refresh token format in DB (id: ${entity.id}): ${err.developerFriendlyMessage}"
+                )
+              }
 
-  override def deleteByRefreshToken(token: String): Task[Unit] =
+          val userIdEither: Either[ValidationError, UserId] = UserId(entity.userId)
+          val validatedUserIdZIO: Task[UserId] =
+            ZIO
+              .fromEither(userIdEither)
+              .mapError { err =>
+                new IllegalArgumentException(
+                  s"Invalid user ID format in DB (id: ${entity.id}): ${err.developerFriendlyMessage}"
+                )
+              }
+
+          for
+            validToken <- validatedTokenZIO
+            validUserId <- validatedUserIdZIO
+          yield Some(
+            RefreshToken(token = validToken, expiresAt = entity.expiresAt, userId = validUserId)
+          )
+        case None => ZIO.succeed(None)
+
+  override def deleteByRefreshToken(token: JwtRefreshToken): Task[Unit] =
     run(quote {
-      query[RefreshTokenEntity].filter(_.refreshToken == lift(token)).delete
+      query[RefreshTokenEntity].filter(_.refreshToken == lift(token.value)).delete
     }).unit
 
   override def deleteAllByUserId(userId: UserId): Task[Unit] =

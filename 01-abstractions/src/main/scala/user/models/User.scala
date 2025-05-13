@@ -1,16 +1,16 @@
 package user.models
 
 import zio.json.*
+
 final case class User(
   id: UserId,
-  email: String,
+  email: Email,
   passwordHash: String,
-  firstName: Option[String],
-  lastName: Option[String],
+  firstName: Option[FirstName],
+  lastName: Option[LastName],
   isActive: Boolean,
 )
 
-// ! TODO: add types for validating input data using iron and scala-newtype
 object User:
   given JsonCodec[User] =
     DeriveJsonCodec.gen[User]

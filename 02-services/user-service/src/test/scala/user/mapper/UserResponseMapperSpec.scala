@@ -5,15 +5,25 @@ import zio.test.*
 import user.models.User
 import user.models.UserId
 import user.models.UserResponse
+import user.models.{ Email, FirstName, LastName }
 
 object UserResponseMapperSpec extends ZIOSpecDefault:
+  private def unsafeUserId(id: String): UserId =
+    UserId(id).getOrElse(throw new RuntimeException(s"Invalid UserId in test setup: $id"))
+  private def unsafeEmail(email: String): Email =
+    Email(email).getOrElse(throw new RuntimeException(s"Invalid Email in test setup: $email"))
+  private def unsafeFirstName(name: String): FirstName =
+    FirstName(name).getOrElse(throw new RuntimeException(s"Invalid FirstName in test setup: $name"))
+  private def unsafeLastName(name: String): LastName =
+    LastName(name).getOrElse(throw new RuntimeException(s"Invalid LastName in test setup: $name"))
+
   val testUser =
     User(
-      id = UserId("test-id"),
-      email = "test@example.com",
+      id = unsafeUserId("test-id"),
+      email = unsafeEmail("test@example.com"),
       passwordHash = "hashed-password",
-      firstName = Some("Test"),
-      lastName = Some("User"),
+      firstName = Some(unsafeFirstName("Test")),
+      lastName = Some(unsafeLastName("User")),
       isActive = true,
     )
 
@@ -25,16 +35,16 @@ object UserResponseMapperSpec extends ZIOSpecDefault:
           response <- mapper.fromUser(testUser)
         yield assertTrue(
           response.id == "test-id",
-          response.email == "test@example.com",
-          response.firstName == Some("Test"),
-          response.lastName == Some("User"),
+          response.email.value == "test@example.com",
+          response.firstName.map(_.value) == Some("Test"),
+          response.lastName.map(_.value) == Some("User"),
         )
       },
       test("fromUser should handle empty firstName and lastName") {
         val userWithoutNames =
           User(
-            id = UserId("no-names"),
-            email = "nonames@example.com",
+            id = unsafeUserId("no-names"),
+            email = unsafeEmail("nonames@example.com"),
             passwordHash = "password-hash",
             firstName = None,
             lastName = None,
@@ -46,7 +56,7 @@ object UserResponseMapperSpec extends ZIOSpecDefault:
           response <- mapper.fromUser(userWithoutNames)
         yield assertTrue(
           response.id == "no-names",
-          response.email == "nonames@example.com",
+          response.email.value == "nonames@example.com",
           response.firstName.isEmpty,
           response.lastName.isEmpty,
         )

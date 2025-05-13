@@ -2,7 +2,7 @@ package jwt.service
 
 import zio.*
 import jwt.config.JwtConfig
-import jwt.models.AccessToken
+import jwt.models.{ AccessToken, JwtAccessToken, JwtRefreshToken }
 import user.models.UserId
 import java.time.Instant
 import pdi.jwt.{ JwtAlgorithm, JwtClaim, JwtZIOJson }
@@ -28,7 +28,7 @@ class JwtServiceImpl(jwtConfig: JwtConfig, tokenRepository: TokenRepository) ext
           expiration = Some(expiresAt.toEpochMilli),
           issuedAt = Some(issuedAt.toEpochMilli),
         )
-      token <-
+      tokenString <-
         ZIO.attempt(
           JwtZIOJson.encode(
             claim,
@@ -36,7 +36,15 @@ class JwtServiceImpl(jwtConfig: JwtConfig, tokenRepository: TokenRepository) ext
             JwtAlgorithm.HS256,
           )
         )
-    yield AccessToken(token, expiresAt, userId)
+      jwtAccessToken <-
+        ZIO
+          .fromEither(JwtAccessToken(tokenString))
+          .mapError(err =>
+            new IllegalArgumentException(
+              s"Failed to create JwtAccessToken: ${err.developerFriendlyMessage}"
+            )
+          )
+    yield AccessToken(jwtAccessToken, expiresAt, userId)
 
   override def createRefreshToken(
     userId: UserId,
@@ -64,31 +72,45 @@ class JwtServiceImpl(jwtConfig: JwtConfig, tokenRepository: TokenRepository) ext
             JwtAlgorithm.HS256,
           )
         )
-      refreshToken = RefreshToken(tokenString, expiresAt, userId)
+      jwtRefreshToken <-
+        ZIO
+          .fromEither(JwtRefreshToken(tokenString))
+          .mapError(err =>
+            new IllegalArgumentException(
+              s"Failed to create JwtRefreshToken: ${err.developerFriendlyMessage}"
+            )
+          )
+      refreshToken = RefreshToken(jwtRefreshToken, expiresAt, userId)
       _ <- tokenRepository.saveRefreshToken(refreshToken)
     yield refreshToken
 
-  override def validateToken(token: String): Task[UserId] =
+  override def validateToken(token: JwtAccessToken): Task[UserId] =
     for
       secretKey <- jwtConfig.secretKey
-      claim <- ZIO.fromTry(JwtZIOJson.decode(token, secretKey, Seq(JwtAlgorithm.HS256)))
+      claim <- ZIO.fromTry(JwtZIOJson.decode(token.value, secretKey, Seq(JwtAlgorithm.HS256)))
       now = Instant.now().getEpochSecond
       expiration <-
         ZIO.fromOption(claim.expiration).orElseFail(new Exception("Token has no expiration"))
       _ <- ZIO.fail(new Exception("Token expired")).when(expiration <= now)
       subject <- ZIO.fromOption(claim.subject).orElseFail(new Exception("No subject in token"))
-    yield UserId(subject)
+      userId <-
+        ZIO
+          .fromEither(UserId(subject))
+          .mapError(err =>
+            new IllegalArgumentException(
+              s"Invalid UserId format in token: ${err.developerFriendlyMessage}"
+            )
+          )
+    yield userId
 
-  override def refreshToken(refreshTokenStr: String): Task[Option[AccessToken]] =
+  override def refreshToken(token: JwtRefreshToken): Task[Option[AccessToken]] =
     for
-      refreshTokenOpt <- tokenRepository.findByRefreshToken(refreshTokenStr)
+      refreshTokenOpt <- tokenRepository.findByRefreshToken(token)
       result <-
         refreshTokenOpt match
           case Some(rToken) =>
-            for
-              _ <- tokenRepository.deleteByRefreshToken(refreshTokenStr)
-              accessToken <- createAccessToken(rToken.userId, Instant.now())
-            yield Some(accessToken)
+            tokenRepository.deleteByRefreshToken(rToken.token) *>
+              createAccessToken(rToken.userId).map(Some(_))
           case None =>
             ZIO.succeed(None)
     yield result

@@ -9,6 +9,7 @@ import zio.*
 import io.getquill.*
 import io.getquill.jdbczio.Quill
 import user.mapper.UserEntityMapper
+import user.models.{ Email, FirstName, LastName }
 
 class UserRepositoryImpl(quill: Quill.Postgres[SnakeCase], userEntityMapper: UserEntityMapper)
     extends UserRepository:
@@ -21,39 +22,69 @@ class UserRepositoryImpl(quill: Quill.Postgres[SnakeCase], userEntityMapper: Use
     for
       userEntity <- run(quote(query[UserEntity].filter(_.id == lift(id.value))))
       oneUser <- ZIO.succeed(userEntity.headOption)
-      user <-
-        oneUser match
-          case Some(userEntity) => userEntityMapper.toUser(userEntity).map(Some(_))
-          case None => ZIO.succeed(None)
+      user <- ZIO.foreach(oneUser)(userEntityMapper.toUser(_))
     yield user
 
-  override def findByEmail(email: String): Task[Option[User]] =
+  override def findByEmail(emailRaw: String): Task[Option[User]] =
     for
-      userEntity <- run(quote(query[UserEntity].filter(_.email == lift(email))))
+      userEntity <- run(quote(query[UserEntity].filter(_.email == lift(emailRaw))))
       oneUser <- ZIO.succeed(userEntity.headOption)
-      user <-
-        oneUser match
-          case Some(userEntity) => userEntityMapper.toUser(userEntity).map(Some(_))
-          case None => ZIO.succeed(None)
+      user <- ZIO.foreach(oneUser)(userEntityMapper.toUser(_))
     yield user
 
   override def create(
-    email: String,
+    emailRaw: String,
     passwordHash: String,
-    firstName: Option[String],
-    lastName: Option[String],
+    firstNameRaw: Option[String],
+    lastNameRaw: Option[String],
   ): Task[User] =
     for
-      user <-
-        ZIO.succeed(
-          User(
-            id = UserId(UUID.randomUUID().toString),
-            email,
-            passwordHash,
-            firstName,
-            lastName,
-            isActive = true,
+      validatedUserId <-
+        ZIO
+          .fromEither(UserId(UUID.randomUUID().toString))
+          .mapError(err =>
+            new IllegalArgumentException(
+              s"Invalid UserId for new user: ${err.developerFriendlyMessage}"
+            )
           )
+      validEmail <-
+        ZIO
+          .fromEither(Email(emailRaw))
+          .mapError(err =>
+            new IllegalArgumentException(
+              s"Invalid email for new user: ${err.developerFriendlyMessage}"
+            )
+          )
+
+      validFirstName <-
+        ZIO.foreach(firstNameRaw) { name =>
+          ZIO
+            .fromEither(FirstName(name))
+            .mapError(err =>
+              new IllegalArgumentException(
+                s"Invalid first name for new user: ${err.developerFriendlyMessage}"
+              )
+            )
+        }
+
+      validLastName <-
+        ZIO.foreach(lastNameRaw) { name =>
+          ZIO
+            .fromEither(LastName(name))
+            .mapError(err =>
+              new IllegalArgumentException(
+                s"Invalid last name for new user: ${err.developerFriendlyMessage}"
+              )
+            )
+        }
+      user =
+        User(
+          id = validatedUserId,
+          email = validEmail,
+          passwordHash = passwordHash,
+          firstName = validFirstName,
+          lastName = validLastName,
+          isActive = true,
         )
       userEntity <- userEntityMapper.fromUser(user, Instant.now(), Instant.now())
       _ <-
@@ -65,41 +96,61 @@ class UserRepositoryImpl(quill: Quill.Postgres[SnakeCase], userEntityMapper: Use
 
   override def update(
     id: UserId,
-    firstName: Option[String],
-    lastName: Option[String],
+    firstNameRaw: Option[String],
+    lastNameRaw: Option[String],
   ): Task[Option[User]] =
     for
       existingUserOpt <- findById(id)
       result <-
         existingUserOpt match
           case Some(existingUser) =>
-            val now = Instant.now()
-            val updatedUser =
-              existingUser.copy(
-                firstName = firstName,
-                lastName = lastName,
-              )
-            val createdAt =
-              run(quote {
-                query[UserEntity].filter(_.id == lift(id.value)).map(_.createdAt)
-              }).map(_.headOption.getOrElse(now)).orDie
-
             for
-              created <- createdAt
-              entity <- userEntityMapper.fromUser(updatedUser, created, now)
+              validFirstName <-
+                ZIO.foreach(firstNameRaw) { name =>
+                  ZIO
+                    .fromEither(FirstName(name))
+                    .mapError(err =>
+                      new IllegalArgumentException(
+                        s"Invalid first name for update: ${err.developerFriendlyMessage}"
+                      )
+                    )
+                }
+              validLastName <-
+                ZIO.foreach(lastNameRaw) { name =>
+                  ZIO
+                    .fromEither(LastName(name))
+                    .mapError(err =>
+                      new IllegalArgumentException(
+                        s"Invalid last name for update: ${err.developerFriendlyMessage}"
+                      )
+                    )
+                }
+
+              now = Instant.now()
+              updatedUser =
+                existingUser.copy(
+                  firstName = validFirstName,
+                  lastName = validLastName,
+                )
+
+              existingEntityCreatedAt <-
+                run(quote(query[UserEntity].filter(_.id == lift(id.value)).map(_.createdAt)))
+                  .map(_.headOption.getOrElse(now))
+
+              entityToUpdate <- userEntityMapper.fromUser(updatedUser, existingEntityCreatedAt, now)
+
               _ <-
                 run:
                   quote:
                     query[UserEntity]
                       .filter(_.id == lift(id.value))
                       .update(
-                        _.firstName -> lift(entity.firstName),
-                        _.lastName -> lift(entity.lastName),
-                        _.updatedAt -> lift(entity.updatedAt),
+                        _.firstName -> lift(entityToUpdate.firstName),
+                        _.lastName -> lift(entityToUpdate.lastName),
+                        _.updatedAt -> lift(entityToUpdate.updatedAt),
                       )
             yield Some(updatedUser)
-          case None =>
-            ZIO.none
+          case None => ZIO.succeed(None)
     yield result
 
   override def updatePassword(id: UserId, passwordHash: String): Task[Boolean] =
@@ -107,13 +158,13 @@ class UserRepositoryImpl(quill: Quill.Postgres[SnakeCase], userEntityMapper: Use
       existingUserOpt <- findById(id)
       result <-
         existingUserOpt match
-          case Some(user) =>
+          case Some(_) =>
             run {
               quote:
                 query[UserEntity]
                   .filter(_.id == lift(id.value))
                   .update(_.passwordHash -> lift(passwordHash), _.updatedAt -> lift(Instant.now()))
-            }.map(_ => true)
+            }.map(_ > 0)
           case None =>
             ZIO.succeed(false)
     yield result
@@ -125,15 +176,16 @@ class UserRepositoryImpl(quill: Quill.Postgres[SnakeCase], userEntityMapper: Use
         existingUserOpt match
           case Some(_) =>
             val now = Instant.now()
-            run {
-              quote:
+            run(
+              quote(
                 query[UserEntity]
                   .filter(_.id == lift(id.value))
                   .update(
                     _.isActive -> lift(false),
                     _.updatedAt -> lift(now),
                   )
-            }.map(_ > 0)
+              )
+            ).map(_ > 0)
           case None =>
             ZIO.succeed(false)
     yield result

@@ -6,88 +6,125 @@ import user.models.UserId
 import java.time.Instant
 
 object TokenSpec extends ZIOSpecDefault:
+  // Хелпер для создания валидных значений в тестах (можно вынести в общий файл)
+  private def valid[E, A](either: Either[E, A], fieldName: String): A =
+    either.fold(
+      e => throw new RuntimeException(s"Failed to create valid $fieldName for test: $e"),
+      identity,
+    )
+
   // Тестовые данные
-  val userId =
-    UserId("test-user-123")
-  val token =
+  val rawUserIdString =
+    "test-user-123"
+  val testUserId =
+    valid(UserId(rawUserIdString), "UserId")
+
+  val rawTokenString =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0LXVzZXItMTIzIiwiaWF0IjoxNTE2MjM5MDIyfQ.emnWLgvWMvCQJIJQ8In6Dz0nL_gk75zkxkhI53vvLQA"
-  val expiresAt =
+
+  val testJwtAccessToken =
+    valid(JwtAccessToken(rawTokenString), "JwtAccessToken")
+  val testJwtRefreshToken =
+    valid(JwtRefreshToken(rawTokenString), "JwtRefreshToken")
+
+  val expiresAtInstant: Instant =
     Instant.now().plusSeconds(3600) // +1 час
 
   def spec =
     suite("JWT Token models")(
       test("AccessToken should correctly store values") {
-        val accessToken = AccessToken(token, expiresAt, userId)
+        val accessToken = AccessToken(testJwtAccessToken, expiresAtInstant, testUserId)
 
-        assertTrue(accessToken.token == token) &&
-        assertTrue(accessToken.expiresAt.equals(expiresAt)) &&
-        assertTrue(accessToken.userId.value == userId.value)
+        assertTrue(accessToken.token.value == rawTokenString) &&
+        assertTrue(accessToken.expiresAt.equals(expiresAtInstant)) &&
+        assertTrue(accessToken.userId.value == rawUserIdString)
       },
       test("RefreshToken should correctly store values") {
-        val refreshToken = RefreshToken(token, expiresAt, userId)
+        val refreshToken = RefreshToken(testJwtRefreshToken, expiresAtInstant, testUserId)
 
-        assertTrue(refreshToken.token == token) &&
-        assertTrue(refreshToken.expiresAt.equals(expiresAt)) &&
-        assertTrue(refreshToken.userId.value == userId.value)
+        assertTrue(refreshToken.token.value == rawTokenString) &&
+        assertTrue(refreshToken.expiresAt.equals(expiresAtInstant)) &&
+        assertTrue(refreshToken.userId.value == rawUserIdString)
       },
       test("AccessToken should check expiration correctly") {
+        val expiredTime = Instant.now().minusSeconds(3600)
+        val validTime = Instant.now().plusSeconds(3600)
+
         val expiredToken =
           AccessToken(
-            token,
-            Instant.now().minusSeconds(3600), // -1 час (уже истек)
-            userId,
+            testJwtAccessToken,
+            expiredTime,
+            testUserId,
           )
 
         val validToken =
           AccessToken(
-            token,
-            Instant.now().plusSeconds(3600), // +1 час (еще действителен)
-            userId,
+            testJwtAccessToken,
+            validTime,
+            testUserId,
           )
 
         assertTrue(expiredToken.expiresAt.isBefore(Instant.now())) &&
         assertTrue(validToken.expiresAt.isAfter(Instant.now()))
       },
       test("RefreshToken should check expiration correctly") {
+        val expiredTime = Instant.now().minusSeconds(3600)
+        val validTime = Instant.now().plusSeconds(3600)
+
         val expiredToken =
           RefreshToken(
-            token,
-            Instant.now().minusSeconds(3600), // -1 час (уже истек)
-            userId,
+            testJwtRefreshToken,
+            expiredTime,
+            testUserId,
           )
 
         val validToken =
           RefreshToken(
-            token,
-            Instant.now().plusSeconds(3600), // +1 час (еще действителен)
-            userId,
+            testJwtRefreshToken,
+            validTime,
+            testUserId,
           )
 
         assertTrue(expiredToken.expiresAt.isBefore(Instant.now())) &&
         assertTrue(validToken.expiresAt.isAfter(Instant.now()))
       },
       test("Tokens with same values should compare fields") {
-        val token1 = AccessToken("same-token", expiresAt, userId)
-        val token2 = AccessToken("same-token", expiresAt, userId)
+        val tokenStr1 = "same-token-string"
+        val jwtAccess1 = valid(JwtAccessToken(tokenStr1), "JwtAccess1")
+        val jwtRefresh1 = valid(JwtRefreshToken(tokenStr1), "JwtRefresh1")
+        val userForTest1 = valid(UserId("user-for-compare"), "UserForCompare1")
+        val expires1 = Instant.now().plusSeconds(1000)
 
-        val refreshToken1 = RefreshToken("same-refresh", expiresAt, userId)
-        val refreshToken2 = RefreshToken("same-refresh", expiresAt, userId)
+        val accessToken1 = AccessToken(jwtAccess1, expires1, userForTest1)
+        val accessToken2 = AccessToken(jwtAccess1, expires1, userForTest1)
 
-        assertTrue(token1.token == token2.token) &&
-        assertTrue(token1.expiresAt.equals(token2.expiresAt)) &&
-        assertTrue(token1.userId.value == token2.userId.value) &&
-        assertTrue(refreshToken1.token == refreshToken2.token) &&
+        val refreshToken1 = RefreshToken(jwtRefresh1, expires1, userForTest1)
+        val refreshToken2 = RefreshToken(jwtRefresh1, expires1, userForTest1)
+
+        // Сравниваем поля индивидуально
+        assertTrue(accessToken1.token.value == accessToken2.token.value) &&
+        assertTrue(accessToken1.expiresAt.equals(accessToken2.expiresAt)) &&
+        assertTrue(accessToken1.userId.value == accessToken2.userId.value) &&
+        assertTrue(refreshToken1.token.value == refreshToken2.token.value) &&
         assertTrue(refreshToken1.expiresAt.equals(refreshToken2.expiresAt)) &&
         assertTrue(refreshToken1.userId.value == refreshToken2.userId.value)
       },
       test("Tokens with different values should have different fields") {
-        val token1 = AccessToken("token1", expiresAt, userId)
-        val token2 = AccessToken("token2", expiresAt, userId)
+        val tokenStr_A = "tokenA"
+        val tokenStr_B = "tokenB"
+        val jwtAccess_A = valid(JwtAccessToken(tokenStr_A), "JwtAccessA")
+        val jwtAccess_B = valid(JwtAccessToken(tokenStr_B), "JwtAccessB")
+        val jwtRefresh_A = valid(JwtRefreshToken(tokenStr_A), "JwtRefreshA")
+        val jwtRefresh_B = valid(JwtRefreshToken(tokenStr_B), "JwtRefreshB")
+        val user_A = valid(UserId("userA"), "UserA")
 
-        val refreshToken1 = RefreshToken("refresh1", expiresAt, userId)
-        val refreshToken2 = RefreshToken("refresh2", expiresAt, userId)
+        val accessToken_A = AccessToken(jwtAccess_A, expiresAtInstant, user_A)
+        val accessToken_B = AccessToken(jwtAccess_B, expiresAtInstant, user_A)
 
-        assertTrue(token1.token != token2.token) &&
-        assertTrue(refreshToken1.token != refreshToken2.token)
+        val refreshToken_A = RefreshToken(jwtRefresh_A, expiresAtInstant, user_A)
+        val refreshToken_B = RefreshToken(jwtRefresh_B, expiresAtInstant, user_A)
+
+        assertTrue(accessToken_A.token.value != accessToken_B.token.value) &&
+        assertTrue(refreshToken_A.token.value != refreshToken_B.token.value)
       },
     )
