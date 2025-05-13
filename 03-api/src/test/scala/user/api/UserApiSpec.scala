@@ -7,11 +7,31 @@ import user.models.*
 import user.mapper.*
 import auth.service.*
 import jwt.service.*
-import jwt.models.{ AccessToken, RefreshToken }
+import jwt.models.{ AccessToken, RefreshToken, JwtAccessToken, JwtRefreshToken }
 import java.time.Instant
 import java.util.UUID
 
 object UserApiSpec extends ZIOSpecDefault:
+
+  // Helper functions for creating custom types safely in tests
+  private def unsafeUserId(id: String): UserId =
+    UserId(id).getOrElse(throw new RuntimeException(s"Invalid UserId in test: $id"))
+  private def unsafeEmail(email: String): Email =
+    Email(email).getOrElse(throw new RuntimeException(s"Invalid Email in test: $email"))
+  private def unsafePassword(password: String): Password =
+    Password(password).getOrElse(throw new RuntimeException(s"Invalid Password in test: $password"))
+  private def unsafeFirstName(name: String): FirstName =
+    FirstName(name).getOrElse(throw new RuntimeException(s"Invalid FirstName in test: $name"))
+  private def unsafeLastName(name: String): LastName =
+    LastName(name).getOrElse(throw new RuntimeException(s"Invalid LastName in test: $name"))
+  private def unsafeJwtAccessToken(token: String): JwtAccessToken =
+    JwtAccessToken(token).getOrElse(
+      throw new RuntimeException(s"Invalid JwtAccessToken in test: $token")
+    )
+  private def unsafeJwtRefreshToken(token: String): JwtRefreshToken =
+    JwtRefreshToken(token).getOrElse(
+      throw new RuntimeException(s"Invalid JwtRefreshToken in test: $token")
+    )
 
   // Мок JwtService
   class MockJwtService extends JwtService:
@@ -24,11 +44,11 @@ object UserApiSpec extends ZIOSpecDefault:
       userId: UserId,
       issuedAt: Instant = Instant.now(),
     ): Task[AccessToken] =
-      val token = s"access-token-${UUID.randomUUID().toString}"
-      tokens += (token -> userId)
+      val tokenValue = s"access-token-${UUID.randomUUID().toString}"
+      tokens += (tokenValue -> userId)
       val accessToken =
         AccessToken(
-          token = token,
+          token = unsafeJwtAccessToken(tokenValue),
           expiresAt = issuedAt.plusSeconds(3600),
           userId = userId,
         )
@@ -38,23 +58,23 @@ object UserApiSpec extends ZIOSpecDefault:
       userId: UserId,
       issuedAt: Instant = Instant.now(),
     ): Task[RefreshToken] =
-      val token = s"refresh-token-${UUID.randomUUID().toString}"
-      refreshTokens += (token -> userId)
+      val tokenValue = s"refresh-token-${UUID.randomUUID().toString}"
+      refreshTokens += (tokenValue -> userId)
       val refreshToken =
         RefreshToken(
-          token = token,
+          token = unsafeJwtRefreshToken(tokenValue),
           expiresAt = issuedAt.plusSeconds(86400),
           userId = userId,
         )
       ZIO.succeed(refreshToken)
 
-    override def validateToken(token: String): Task[UserId] =
-      tokens.get(token) match
+    override def validateToken(token: JwtAccessToken): Task[UserId] =
+      tokens.get(token.value) match
         case Some(userId) => ZIO.succeed(userId)
         case None => ZIO.fail(new RuntimeException("Invalid token"))
 
-    override def refreshToken(token: String): Task[Option[AccessToken]] =
-      refreshTokens.get(token) match
+    override def refreshToken(token: JwtRefreshToken): Task[Option[AccessToken]] =
+      refreshTokens.get(token.value) match
         case Some(userId) =>
           for accessToken <- createAccessToken(userId)
           yield Some(accessToken)
@@ -68,21 +88,22 @@ object UserApiSpec extends ZIOSpecDefault:
 
   // Мок AuthService
   class MockAuthService(jwtService: JwtService) extends AuthService:
-    override def login(email: String, password: String): Task[Option[AccessToken]] =
-      if email == "valid@example.com" && password == "validPassword" then
-        val userId = UserId("user-123")
+    override def login(email: Email, password: Password): Task[Option[AccessToken]] =
+      if email.value == "valid@example.com" && password.value == "validPassword" then
+        val userId = unsafeUserId("user-123")
         jwtService.createAccessToken(userId, Instant.now()).map(Some(_))
       else ZIO.succeed(None)
 
     override def register(
-      email: String,
-      password: String,
-      firstName: Option[String],
-      lastName: Option[String],
+      email: Email,
+      password: Password,
+      firstName: Option[FirstName],
+      lastName: Option[LastName],
     ): Task[AccessToken] =
-      if email == "existing@example.com" then ZIO.fail(new RuntimeException("User already exists"))
+      if email.value == "existing@example.com" then
+        ZIO.fail(new RuntimeException("User already exists"))
       else
-        val userId = UserId("new-user-456")
+        val userId = unsafeUserId("new-user-456")
         jwtService.createAccessToken(userId, Instant.now())
 
     override def logout(userId: UserId): Task[Unit] =
@@ -95,20 +116,20 @@ object UserApiSpec extends ZIOSpecDefault:
         .collection
         .mutable
         .Map(
-          UserId("user-123") -> User(
-            id = UserId("user-123"),
-            email = "valid@example.com",
+          unsafeUserId("user-123") -> User(
+            id = unsafeUserId("user-123"),
+            email = unsafeEmail("valid@example.com"),
             passwordHash = "hashed-password",
-            firstName = Some("Test"),
-            lastName = Some("User"),
+            firstName = Some(unsafeFirstName("Test")),
+            lastName = Some(unsafeLastName("User")),
             isActive = true,
           ),
-          UserId("new-user-456") -> User(
-            id = UserId("new-user-456"),
-            email = "new@example.com",
+          unsafeUserId("new-user-456") -> User(
+            id = unsafeUserId("new-user-456"),
+            email = unsafeEmail("new@example.com"),
             passwordHash = "hashed-new-password",
-            firstName = Some("New"),
-            lastName = Some("User"),
+            firstName = Some(unsafeFirstName("New")),
+            lastName = Some(unsafeLastName("User")),
             isActive = true,
           ),
         )
@@ -116,24 +137,24 @@ object UserApiSpec extends ZIOSpecDefault:
     override def findUserById(id: UserId): Task[Option[User]] =
       ZIO.succeed(users.get(id))
 
-    override def findUserByEmail(email: String): Task[Option[User]] =
-      ZIO.succeed(users.values.find(_.email == email))
+    override def findUserByEmail(email: Email): Task[Option[User]] =
+      ZIO.succeed(users.values.find(_.email.equals(email)))
 
     override def registerUser(
-      email: String,
-      password: String,
-      firstName: Option[String],
-      lastName: Option[String],
+      email: Email,
+      password: Password,
+      firstName: Option[FirstName],
+      lastName: Option[LastName],
     ): Task[User] =
-      if users.values.exists(_.email == email) then
+      if users.values.exists(_.email.equals(email)) then
         ZIO.fail(new RuntimeException("User already exists"))
       else
-        val newId = UserId(UUID.randomUUID().toString)
+        val newId = unsafeUserId(UUID.randomUUID().toString)
         val user =
           User(
             id = newId,
             email = email,
-            passwordHash = s"hashed-$password",
+            passwordHash = s"hashed-${password.value}",
             firstName = firstName,
             lastName = lastName,
             isActive = true,
@@ -141,16 +162,16 @@ object UserApiSpec extends ZIOSpecDefault:
         users.put(newId, user)
         ZIO.succeed(user)
 
-    override def validateCredentials(email: String, password: String): Task[Option[User]] =
+    override def validateCredentials(email: Email, password: Password): Task[Option[User]] =
       ZIO.succeed:
-        users.values.find(u => u.email == email && u.isActive) match
-          case Some(user) if password == "validPassword" => Some(user)
+        users.values.find(u => u.email.equals(email) && u.isActive) match
+          case Some(user) if password.value == "validPassword" => Some(user)
           case _ => None
 
     override def updateUser(
       id: UserId,
-      firstName: Option[String],
-      lastName: Option[String],
+      firstName: Option[FirstName],
+      lastName: Option[LastName],
     ): Task[Option[User]] =
       ZIO.succeed:
         users.get(id).map { user =>
@@ -165,13 +186,13 @@ object UserApiSpec extends ZIOSpecDefault:
 
     override def changePassword(
       id: UserId,
-      oldPassword: String,
-      newPassword: String,
+      oldPassword: Password,
+      newPassword: Password,
     ): Task[Boolean] =
       ZIO.succeed:
         users.get(id) match
-          case Some(user) if user.isActive && oldPassword == "validPassword" =>
-            val updated = user.copy(passwordHash = s"hashed-$newPassword")
+          case Some(user) if user.isActive && oldPassword.value == "validPassword" =>
+            val updated = user.copy(passwordHash = s"hashed-${newPassword.value}")
             users.put(id, updated)
             true
           case _ => false
@@ -219,28 +240,25 @@ object UserApiSpec extends ZIOSpecDefault:
           authService <- ZIO.service[AuthService]
           userService <- ZIO.service[UserService]
           jwtService <- ZIO.service[JwtService]
+          userResponseMapper <- ZIO.service[UserResponseMapper]
 
           result <-
             for
               accessToken <-
-                authService.register("new@example.com", "password123", Some("New"), Some("User"))
+                authService.register(
+                  unsafeEmail("new@example.com"),
+                  unsafePassword("password123"),
+                  Some(unsafeFirstName("New")),
+                  Some(unsafeLastName("User")),
+                )
               userOpt <- userService.findUserById(accessToken.userId)
               user <- ZIO.fromOption(userOpt).orElseFail(new RuntimeException("User not found"))
-              refreshToken <- jwtService.createRefreshToken(accessToken.userId, Instant.now())
-              userResponse <-
-                ZIO
-                  .service[UserResponseMapper]
-                  .flatMap(_.fromUser(user))
-            yield UserResponse(
-              id = user.id.value,
-              email = user.email,
-              firstName = user.firstName,
-              lastName = user.lastName,
-            )
+              userResponse <- userResponseMapper.fromUser(user)
+            yield userResponse
         yield assertTrue(
-          result.email == "new@example.com",
-          result.firstName == Some("New"),
-          result.lastName == Some("User"),
+          result.email.value == "new@example.com",
+          result.firstName.map(_.value) == Some("New"),
+          result.lastName.map(_.value) == Some("User"),
         )
       },
       test("login implementation functions correctly") {
@@ -249,28 +267,26 @@ object UserApiSpec extends ZIOSpecDefault:
           authService <- ZIO.service[AuthService]
           userService <- ZIO.service[UserService]
           jwtService <- ZIO.service[JwtService]
+          userResponseMapper <- ZIO.service[UserResponseMapper]
 
           result <-
             for
-              accessTokenOpt <- authService.login("valid@example.com", "validPassword")
+              accessTokenOpt <-
+                authService.login(unsafeEmail("valid@example.com"), unsafePassword("validPassword"))
               accessToken <-
                 ZIO
                   .fromOption(accessTokenOpt)
                   .orElseFail(new RuntimeException("Invalid credentials"))
               userOpt <- userService.findUserById(accessToken.userId)
               user <- ZIO.fromOption(userOpt).orElseFail(new RuntimeException("User not found"))
-              refreshToken <- jwtService.createRefreshToken(accessToken.userId, Instant.now())
-              userResponse <-
-                ZIO
-                  .service[UserResponseMapper]
-                  .flatMap(_.fromUser(user))
-            yield (accessToken, user, userResponse)
-          (accessToken, user, userResponse) = result
+              userResponse <- userResponseMapper.fromUser(user)
+            yield (accessToken, userResponse)
+          (accessToken, userResponse) = result
         yield assertTrue(
-          accessToken.token.nonEmpty,
-          userResponse.email == "valid@example.com",
-          userResponse.firstName == Some("Test"),
-          userResponse.lastName == Some("User"),
+          accessToken.token.value.nonEmpty,
+          userResponse.email.value == "valid@example.com",
+          userResponse.firstName.map(_.value) == Some("Test"),
+          userResponse.lastName.map(_.value) == Some("User"),
         )
       },
       test("getCurrentUser implementation functions correctly") {
@@ -281,15 +297,15 @@ object UserApiSpec extends ZIOSpecDefault:
 
           result <-
             for
-              userOpt <- userService.findUserById(UserId("user-123"))
+              userOpt <- userService.findUserById(unsafeUserId("user-123"))
               user <- ZIO.fromOption(userOpt).orElseFail(new RuntimeException("User not found"))
               userResponse <- responseMapper.fromUser(user)
             yield userResponse
         yield assertTrue(
           result.id == "user-123",
-          result.email == "valid@example.com",
-          result.firstName == Some("Test"),
-          result.lastName == Some("User"),
+          result.email.value == "valid@example.com",
+          result.firstName.map(_.value) == Some("Test"),
+          result.lastName.map(_.value) == Some("User"),
         )
       },
       test("updateUser implementation functions correctly") {
@@ -300,7 +316,12 @@ object UserApiSpec extends ZIOSpecDefault:
 
           result <-
             for
-              userOpt <- userService.updateUser(UserId("user-123"), Some("Updated"), Some("Name"))
+              userOpt <-
+                userService.updateUser(
+                  unsafeUserId("user-123"),
+                  Some(unsafeFirstName("Updated")),
+                  Some(unsafeLastName("Name")),
+                )
               user <-
                 ZIO
                   .fromOption(userOpt)
@@ -309,8 +330,8 @@ object UserApiSpec extends ZIOSpecDefault:
             yield userResponse
         yield assertTrue(
           result.id == "user-123",
-          result.firstName == Some("Updated"),
-          result.lastName == Some("Name"),
+          result.firstName.map(_.value) == Some("Updated"),
+          result.lastName.map(_.value) == Some("Name"),
         )
       },
       test("changePassword implementation functions correctly") {
@@ -319,7 +340,11 @@ object UserApiSpec extends ZIOSpecDefault:
           userService <- ZIO.service[UserService]
 
           result <-
-            userService.changePassword(UserId("user-123"), "validPassword", "newSecurePassword")
+            userService.changePassword(
+              unsafeUserId("user-123"),
+              unsafePassword("validPassword"),
+              unsafePassword("newSecurePassword"),
+            )
         yield assertTrue(
           result == true
         )
@@ -330,13 +355,13 @@ object UserApiSpec extends ZIOSpecDefault:
           authService <- ZIO.service[AuthService]
           jwtService <- ZIO.service[JwtService]
 
-          accessTokenOpt <- authService.login("valid@example.com", "validPassword")
+          accessTokenOpt <-
+            authService.login(unsafeEmail("valid@example.com"), unsafePassword("validPassword"))
           accessToken <-
             ZIO.fromOption(accessTokenOpt).orElseFail(new RuntimeException("Login failed"))
 
           _ <- authService.logout(accessToken.userId)
 
-          // Проверим через JwtService - валидация должна завершиться ошибкой для недействительного токена
           result <- jwtService.validateToken(accessToken.token).exit
         yield assertTrue(
           result.isFailure

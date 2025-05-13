@@ -35,7 +35,6 @@ object Main extends ZIOAppDefault:
             val value = parts(1).trim
             val _ = java.lang.System.setProperty(key, value)
 
-  // Инициализация переменных окружения перед запуском
   loadEnv()
 
   val serverPort =
@@ -103,7 +102,6 @@ object Main extends ZIOAppDefault:
       _ <- Console.printLine("Database migration complete")
       userApi <- ZIO.service[UserApi]
       _ <- Console.printLine(s"API docs available at: http://localhost:$serverPort/docs")
-      // Создаем серверную конфигурацию, которая слушает на всех интерфейсах
       config =
         Server.Config.default.port(serverPort).binding(InetSocketAddress(serverHost, serverPort))
       server <-
