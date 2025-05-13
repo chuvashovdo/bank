@@ -7,13 +7,12 @@ lazy val versions =
       "2.0.19"
     val zioJson =
       "0.6.2"
-    "0.6.2"
     val zioHttp =
       "3.0.0-RC2"
     val tapir =
-      "1.9.9"
+      "1.11.3"
     val openapiCirceYaml =
-      "0.7.3"
+      "0.11.3"
     val quill =
       "4.8.0"
     val postgresql =
@@ -36,10 +35,12 @@ lazy val versions =
       "2.0.0"
     val scalamock =
       "7.3.0"
+    val iron =
+      "3.0.1"
   }
 
 ThisBuild / organization := "bank"
-ThisBuild / scalaVersion := "3.6.4"
+ThisBuild / scalaVersion := "3.6.2"
 ThisBuild / version := "0.1.0-SNAPSHOT"
 
 // Общие настройки SBT для всех пакетов
@@ -64,7 +65,6 @@ lazy val tapirDependencies =
   Seq(
     "com.softwaremill.sttp.tapir" %% "tapir-core" % versions.tapir,
     "com.softwaremill.sttp.tapir" %% "tapir-zio" % versions.tapir,
-    "com.softwaremill.sttp.tapir" %% "tapir-zio-http-server" % versions.tapir,
     "com.softwaremill.sttp.tapir" %% "tapir-json-zio" % versions.tapir,
     "com.softwaremill.sttp.tapir" %% "tapir-swagger-ui-bundle" % versions.tapir,
     "com.softwaremill.sttp.apispec" %% "openapi-circe-yaml" % versions.openapiCirceYaml,
@@ -115,7 +115,8 @@ lazy val root =
       authService,
       userService,
       jwtService,
-      main,
+      httpApi,
+      app,
     )
 
 lazy val abstractions =
@@ -127,6 +128,7 @@ lazy val abstractions =
       commonTestSettings,
       libraryDependencies ++= commonDependencies,
       libraryDependencies ++= commonTestDependencies,
+      libraryDependencies += "io.github.iltotore" %% "iron" % versions.iron,
       Test / testOptions += Tests.Argument(TestFrameworks.MUnit, "+l"),
     )
 
@@ -136,8 +138,7 @@ lazy val serviceCommonSettings =
     commonTestSettings ++
     Seq(
       libraryDependencies ++= commonDependencies,
-      libraryDependencies ++= tapirDependencies,
-      libraryDependencies ++= databaseDependencies,
+      libraryDependencies ++= databaseDependencies.filterNot(_.name == "flyway-core"),
       libraryDependencies ++= commonTestDependencies,
       libraryDependencies ++= h2TestDependency,
     )
@@ -157,6 +158,7 @@ lazy val userService =
     .settings(
       serviceCommonSettings,
       libraryDependencies += "org.mindrot" % "jbcrypt" % versions.jbcrypt,
+      libraryDependencies += "org.mindrot" % "jbcrypt" % versions.jbcrypt % Test,
     )
 
 lazy val jwtService =
@@ -171,10 +173,9 @@ lazy val jwtService =
       ),
     )
 
-lazy val main =
+lazy val httpApi =
   project
-    .in(file("03-app"))
-    .enablePlugins(JavaAppPackaging)
+    .in(file("03-api"))
     .dependsOn(
       abstractions,
       authService,
@@ -187,6 +188,25 @@ lazy val main =
       commonTestSettings,
       libraryDependencies ++= commonDependencies,
       libraryDependencies ++= tapirDependencies,
+      libraryDependencies += "com.softwaremill.sttp.tapir" %% "tapir-zio-http-server" % versions.tapir,
+      libraryDependencies += "dev.zio" %% "zio-http" % versions.zioHttp,
+      libraryDependencies ++= commonTestDependencies,
+    )
+
+lazy val app =
+  project
+    .in(file("04-app"))
+    .enablePlugins(JavaAppPackaging)
+    .dependsOn(
+      abstractions,
+      httpApi,
+    )
+    .settings(
+      commonSettings,
+      autoImportSettings,
+      commonTestSettings,
+      libraryDependencies ++= commonDependencies,
+      libraryDependencies += "com.softwaremill.sttp.tapir" %% "tapir-zio-http-server" % versions.tapir,
       libraryDependencies += "dev.zio" %% "zio-http" % versions.zioHttp,
       libraryDependencies += "org.flywaydb" % "flyway-core" % versions.flyway,
       libraryDependencies ++= commonTestDependencies,
