@@ -4,7 +4,7 @@ import java.time.Instant
 import user.models.UserId
 
 final case class RefreshToken(
-  token: String,
+  token: JwtRefreshToken,
   expiresAt: Instant,
   userId: UserId,
 )

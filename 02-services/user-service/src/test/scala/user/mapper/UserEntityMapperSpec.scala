@@ -5,16 +5,26 @@ import zio.test.*
 import user.entity.UserEntity
 import user.models.User
 import user.models.UserId
+import user.models.{ Email, FirstName, LastName }
 import java.time.Instant
 
 object UserEntityMapperSpec extends ZIOSpecDefault:
+  private def unsafeUserId(id: String): UserId =
+    UserId(id).getOrElse(throw new RuntimeException(s"Invalid UserId in test setup: $id"))
+  private def unsafeEmail(email: String): Email =
+    Email(email).getOrElse(throw new RuntimeException(s"Invalid Email in test setup: $email"))
+  private def unsafeFirstName(name: String): FirstName =
+    FirstName(name).getOrElse(throw new RuntimeException(s"Invalid FirstName in test setup: $name"))
+  private def unsafeLastName(name: String): LastName =
+    LastName(name).getOrElse(throw new RuntimeException(s"Invalid LastName in test setup: $name"))
+
   val testUser =
     User(
-      id = UserId("test-id"),
-      email = "test@example.com",
+      id = unsafeUserId("test-id"),
+      email = unsafeEmail("test@example.com"),
       passwordHash = "hashed-password",
-      firstName = Some("Test"),
-      lastName = Some("User"),
+      firstName = Some(unsafeFirstName("Test")),
+      lastName = Some(unsafeLastName("User")),
       isActive = true,
     )
 
@@ -40,10 +50,10 @@ object UserEntityMapperSpec extends ZIOSpecDefault:
           user <- mapper.toUser(entity)
         yield assertTrue(
           user.id.value == "test-id",
-          user.email == "test@example.com",
+          user.email.value == "test@example.com",
           user.passwordHash == "hashed-password",
-          user.firstName == Some("Test"),
-          user.lastName == Some("User"),
+          user.firstName.map(_.value) == Some("Test"),
+          user.lastName.map(_.value) == Some("User"),
           user.isActive == true,
         )
       },
@@ -67,7 +77,7 @@ object UserEntityMapperSpec extends ZIOSpecDefault:
           mapper <- ZIO.service[UserEntityMapper]
           entity <-
             mapper.createUserEntity(
-              UserId("new-user"),
+              unsafeUserId("new-user"),
               "new@example.com",
               "new-password-hash",
               Some("New"),

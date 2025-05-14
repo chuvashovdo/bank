@@ -1,35 +1,35 @@
 package auth.service
 
 import zio.*
-import user.service.*
-import jwt.service.*
-import user.models.*
-import jwt.models.*
+import user.service.UserService
+import jwt.service.JwtService
+import user.models.{ Email, Password, FirstName, LastName, UserId }
+import jwt.models.AccessToken
 import java.time.Instant
-
 final case class AuthServiceImpl(
   userService: UserService,
   jwtService: JwtService,
 ) extends AuthService:
-  override def login(email: String, password: String): Task[Option[AccessToken]] =
+  override def login(email: Email, password: Password): Task[AccessToken] =
     for
-      userOpt <- userService.validateCredentials(email, password)
-      tokenOpt <-
-        userOpt match
-          case Some(user) =>
-            jwtService.createAccessToken(user.id, Instant.now()).map(Some(_))
-          case None =>
-            ZIO.succeed(None)
-    yield tokenOpt
+      user <- userService.validateCredentials(email, password)
+      token <- jwtService.createAccessToken(user.id, Instant.now())
+    yield token
 
   override def register(
-    email: String,
-    password: String,
-    firstName: Option[String],
-    lastName: Option[String],
+    email: Email,
+    password: Password,
+    firstName: Option[FirstName],
+    lastName: Option[LastName],
   ): Task[AccessToken] =
     for
-      user <- userService.registerUser(email, password, firstName, lastName)
+      user <-
+        userService.registerUser(
+          email,
+          password,
+          firstName,
+          lastName,
+        )
       token <- jwtService.createAccessToken(user.id, Instant.now())
     yield token
 

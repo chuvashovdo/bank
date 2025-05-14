@@ -3,32 +3,51 @@ package user.models
 import zio.*
 import zio.test.*
 import zio.json.*
+import common.errors.{ InvalidDataFormatError, ValueCannotBeEmptyError }
 
 object UserDTOSpec extends ZIOSpecDefault:
   // Генераторы данных
-  val emailGen: Gen[Any, String] =
+  val rawEmailStringGen: Gen[Any, String] =
     for
       user <- Gen.alphaNumericStringBounded(3, 10)
       domain <- Gen.alphaNumericStringBounded(2, 10)
       tld <- Gen.elements("com", "org", "net", "io")
     yield s"$user@$domain.$tld"
 
-  val passwordGen: Gen[Any, String] =
+  val emailGen: Gen[Any, Email] =
+    rawEmailStringGen.map(Email.apply).collect { case Right(email) => email }
+
+  val rawPasswordStringGen: Gen[Any, String] =
     Gen.stringBounded(8, 20)(Gen.alphaNumericChar)
 
-  val nameGen: Gen[Any, String] =
+  val passwordGen: Gen[Any, Password] =
+    rawPasswordStringGen.map(Password.apply).collect { case Right(password) => password }
+
+  val rawNameStringGen: Gen[Any, String] =
     Gen.stringBounded(2, 20)(Gen.alphaChar)
 
-  val optionalNameGen: Gen[Any, Option[String]] =
-    Gen.option(nameGen)
+  val firstNameGen: Gen[Any, FirstName] =
+    rawNameStringGen.map(FirstName.apply).collect { case Right(firstName) => firstName }
+
+  val lastNameGen: Gen[Any, LastName] =
+    rawNameStringGen.map(LastName.apply).collect { case Right(lastName) => lastName }
+
+  val optionalFirstNameGen: Gen[Any, Option[FirstName]] =
+    Gen.option(firstNameGen)
+
+  val optionalLastNameGen: Gen[Any, Option[LastName]] =
+    Gen.option(lastNameGen)
+
+  val userIdGen: Gen[Any, UserId] =
+    Gen.alphaNumericStringBounded(5, 10).map(UserId.apply).collect { case Right(userId) => userId }
 
   // Генератор для RegisterUserRequest
   val registerUserRequestGen: Gen[Any, RegisterUserRequest] =
     for
       email <- emailGen
       password <- passwordGen
-      firstName <- optionalNameGen
-      lastName <- optionalNameGen
+      firstName <- optionalFirstNameGen
+      lastName <- optionalLastNameGen
     yield RegisterUserRequest(email, password, firstName, lastName)
 
   // Генератор для LoginRequest
@@ -41,11 +60,11 @@ object UserDTOSpec extends ZIOSpecDefault:
   // Генератор для UserResponse
   val userResponseGen: Gen[Any, UserResponse] =
     for
-      id <- Gen.alphaNumericStringBounded(5, 10)
       email <- emailGen
-      firstName <- optionalNameGen
-      lastName <- optionalNameGen
-    yield UserResponse(id, email, firstName, lastName)
+      firstName <- optionalFirstNameGen
+      lastName <- optionalLastNameGen
+      userId <- userIdGen
+    yield UserResponse(userId, email, firstName, lastName)
 
   def spec =
     suite("User DTO models")(
@@ -55,16 +74,7 @@ object UserDTOSpec extends ZIOSpecDefault:
           val parsed = json.fromJson[RegisterUserRequest]
 
           assertTrue(parsed.isRight) &&
-          assertTrue {
-            parsed
-              .map { r =>
-                r.email == request.email &&
-                r.password == request.password &&
-                r.firstName == request.firstName &&
-                r.lastName == request.lastName
-              }
-              .getOrElse(false)
-          }
+          assertTrue(parsed.toOption.contains(request))
         }
       },
       test("LoginRequest should correctly serialize to JSON and back") {
@@ -73,14 +83,7 @@ object UserDTOSpec extends ZIOSpecDefault:
           val parsed = json.fromJson[LoginRequest]
 
           assertTrue(parsed.isRight) &&
-          assertTrue(
-            parsed
-              .map(r =>
-                r.email == request.email &&
-                r.password == request.password
-              )
-              .getOrElse(false)
-          )
+          assertTrue(parsed.toOption.contains(request))
         }
       },
       test("UserResponse should correctly serialize to JSON and back") {
@@ -89,28 +92,7 @@ object UserDTOSpec extends ZIOSpecDefault:
           val parsed = json.fromJson[UserResponse]
 
           assertTrue(parsed.isRight) &&
-          assertTrue {
-            parsed
-              .map { r =>
-                r.id == response.id &&
-                r.email == response.email &&
-                r.firstName == response.firstName &&
-                r.lastName == response.lastName
-              }
-              .getOrElse(false)
-          }
+          assertTrue(parsed.toOption.contains(response))
         }
-      },
-      test("RegisterUserRequest should validate input") {
-        val validRequest =
-          RegisterUserRequest(
-            "valid@example.com",
-            "password123",
-            Some("John"),
-            Some("Doe"),
-          )
-
-        assertTrue(validRequest.email.contains("@")) &&
-        assertTrue(validRequest.password.length >= 8)
       },
     )

@@ -15,7 +15,6 @@ import auth.service.*
 import user.repository.*
 import user.api.*
 import user.mapper.{ UserEntityMapper, UserEntityMapperImpl }
-import user.mapper.UserResponseMapperImpl
 import java.nio.file.{ Files, Paths }
 import scala.jdk.CollectionConverters.*
 import java.net.InetSocketAddress
@@ -35,7 +34,6 @@ object Main extends ZIOAppDefault:
             val value = parts(1).trim
             val _ = java.lang.System.setProperty(key, value)
 
-  // Инициализация переменных окружения перед запуском
   loadEnv()
 
   val serverPort =
@@ -89,7 +87,6 @@ object Main extends ZIOAppDefault:
 
   val userApiLayer =
     ZLayer.make[UserApi](
-      UserResponseMapperImpl.layer,
       UserApi.layer,
       jwtServiceLayer,
       authServiceLayer,
@@ -103,7 +100,6 @@ object Main extends ZIOAppDefault:
       _ <- Console.printLine("Database migration complete")
       userApi <- ZIO.service[UserApi]
       _ <- Console.printLine(s"API docs available at: http://localhost:$serverPort/docs")
-      // Создаем серверную конфигурацию, которая слушает на всех интерфейсах
       config =
         Server.Config.default.port(serverPort).binding(InetSocketAddress(serverHost, serverPort))
       server <-

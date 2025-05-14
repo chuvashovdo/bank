@@ -36,5 +36,4 @@ object QuillContext:
             hikariConfig.setDriverClassName("org.postgresql.Driver")
             hikariConfig.setMaximumPoolSize(10)
             new HikariDataSource(hikariConfig)
-      // Создаем Quill.Postgres явно
       yield new Quill.Postgres(SnakeCase, dataSource.asInstanceOf[DataSource])
