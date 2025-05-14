@@ -13,10 +13,10 @@ import common.errors.{
 }
 
 class UserServiceImpl(userRepository: UserRepository) extends UserService:
-  override def findUserById(id: UserId): Task[Option[User]] =
-    userRepository.findById(id)
+  override def findUserById(id: UserId): Task[User] =
+    userRepository.findById(id.value)
 
-  override def findUserByEmail(email: Email): Task[Option[User]] =
+  override def findUserByEmail(email: Email): Task[User] =
     userRepository.findByEmail(email.value)
 
   override def registerUser(
@@ -25,56 +25,60 @@ class UserServiceImpl(userRepository: UserRepository) extends UserService:
     firstName: Option[FirstName],
     lastName: Option[LastName],
   ): Task[User] =
-    for
-      existingUser <- userRepository.findByEmail(email.value)
-      _ <- ZIO.fail(UserAlreadyExistsError(email)).when(existingUser.isDefined)
-      passwordHash <- hashPassword(password.value)
-      user <-
-        userRepository.create(
-          email = email.value,
-          passwordHash = passwordHash,
-          firstName = firstName.map(_.value),
-          lastName = lastName.map(_.value),
-        )
-    yield user
+    userRepository
+      .findByEmail(email.value)
+      .foldZIO(
+        failure = {
+          case _: UserNotFoundError =>
+            for
+              passwordHash <- hashPassword(password.value)
+              newUser <-
+                userRepository.create(
+                  email.value,
+                  passwordHash,
+                  firstName.map(_.value),
+                  lastName.map(_.value),
+                )
+            yield newUser
+          case otherError => ZIO.fail(otherError)
+        },
+        success = _ => ZIO.fail(UserAlreadyExistsError(email)),
+      )
 
-  override def validateCredentials(email: Email, password: Password): Task[Option[User]] =
+  override def validateCredentials(email: Email, password: Password): Task[User] =
     for
-      userOpt <- userRepository.findByEmail(email.value)
-      user <- ZIO.fromOption(userOpt).orElseFail(InvalidCredentialsError())
+      user <- userRepository.findByEmail(email.value)
       _ <- ZIO.fail(UserNotActiveError(email.value)).when(!user.isActive)
       isValid <- checkPassword(password.value, user.passwordHash)
       _ <- ZIO.fail(InvalidCredentialsError()).when(!isValid)
-    yield Some(user)
+    yield user
 
   override def updateUser(
     id: UserId,
     firstName: Option[FirstName],
     lastName: Option[LastName],
-  ): Task[Option[User]] =
-    userRepository.update(id, firstName.map(_.value), lastName.map(_.value))
+  ): Task[User] =
+    userRepository.update(id.value, firstName.map(_.value), lastName.map(_.value))
 
   override def changePassword(
     id: UserId,
     oldPassword: Password,
     newPassword: Password,
-  ): Task[Boolean] =
+  ): Task[Unit] =
     for
-      userOpt <- userRepository.findById(id)
-      user <- ZIO.fromOption(userOpt).orElseFail(UserNotFoundError(id.value))
+      user <- userRepository.findById(id.value)
       _ <- ZIO.fail(UserNotActiveError(id.value)).when(!user.isActive)
       isValid <- checkPassword(oldPassword.value, user.passwordHash)
       _ <- ZIO.fail(InvalidOldPasswordError(id)).when(!isValid)
       newHash <- hashPassword(newPassword.value)
-      updated <- userRepository.updatePassword(id, newHash)
-    yield updated
+      _ <- userRepository.updatePassword(id.value, newHash)
+    yield ()
 
-  override def deactivateUser(id: UserId): Task[Boolean] =
+  override def deactivateUser(id: UserId): Task[Unit] =
     for
-      userOpt <- userRepository.findById(id)
-      _ <- ZIO.fromOption(userOpt).orElseFail(UserNotFoundError(id.value))
-      deactivated <- userRepository.deactivate(id)
-    yield deactivated
+      user <- userRepository.findById(id.value)
+      _ <- userRepository.deactivate(id.value)
+    yield ()
 
   private def hashPassword(passwordRaw: String): Task[String] =
     ZIO.attempt(BCrypt.hashpw(passwordRaw, BCrypt.gensalt(12)))

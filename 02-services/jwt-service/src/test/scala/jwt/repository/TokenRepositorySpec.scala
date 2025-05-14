@@ -14,7 +14,7 @@ import com.zaxxer.hikari.{ HikariConfig, HikariDataSource }
 import java.sql.Timestamp
 import org.slf4j.LoggerFactory
 import ch.qos.logback.classic.{ Level, Logger }
-
+import jwt.entity.RefreshTokenEntity
 object TokenRepositorySpec extends ZIOSpecDefault:
   locally:
     val rootLogger = LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME).asInstanceOf[Logger]
@@ -83,14 +83,16 @@ object TokenRepositorySpec extends ZIOSpecDefault:
       throw new RuntimeException(s"Invalid JwtRefreshToken in test setup: $token")
     )
 
-  def createTestRefreshToken(
+  def createTestRefreshTokenEntity(
     userId: String = "test-user",
     expireInSeconds: Long = 3600,
-  ): RefreshToken =
-    RefreshToken(
-      token = unsafeJwtRefreshToken(s"token-${UUID.randomUUID()}"),
+  ): RefreshTokenEntity =
+    RefreshTokenEntity(
+      id = UUID.randomUUID().toString(),
+      userId = unsafeUserId(userId).value,
+      refreshToken = unsafeJwtRefreshToken(s"token-${UUID.randomUUID()}").value,
       expiresAt = Instant.now().plusSeconds(expireInSeconds),
-      userId = unsafeUserId(userId),
+      createdAt = Instant.now(),
     )
 
   def spec =
@@ -98,88 +100,83 @@ object TokenRepositorySpec extends ZIOSpecDefault:
       test("saveRefreshToken should save token to database") {
         for
           repo <- ZIO.service[TokenRepository]
-          token = createTestRefreshToken()
+          token = createTestRefreshTokenEntity()
           _ <- repo.saveRefreshToken(token)
-          retrieved <- repo.findByRefreshToken(token.token)
+          retrieved <- repo.findByRefreshToken(token.refreshToken)
         yield assertTrue(
-          retrieved.isDefined,
-          retrieved.exists(_.token.value == token.token.value),
-          retrieved.exists(_.userId.value == token.userId.value),
-          retrieved.exists(_.expiresAt.getEpochSecond == token.expiresAt.getEpochSecond),
+          retrieved.token.value == token.refreshToken,
+          retrieved.userId.value == token.userId,
+          retrieved.expiresAt.toEpochMilli == token.expiresAt.toEpochMilli,
         )
       },
       test("findByRefreshToken should return None for non-existent token") {
         for
           repo <- ZIO.service[TokenRepository]
           nonExistentJwtToken = unsafeJwtRefreshToken("non-existent-token")
-          retrieved <- repo.findByRefreshToken(nonExistentJwtToken)
-        yield assertTrue(retrieved.isEmpty)
+          retrieved <- repo.findByRefreshToken(nonExistentJwtToken.value).exit
+        yield assertTrue(retrieved.isFailure)
       },
       test("findByRefreshToken should return None for expired token") {
         for
           repo <- ZIO.service[TokenRepository]
-          expiredToken = createTestRefreshToken(expireInSeconds = 0)
+          expiredToken = createTestRefreshTokenEntity(expireInSeconds = 0)
           _ <- repo.saveRefreshToken(expiredToken)
           _ <- TestClock.adjust(1.second)
-          retrieved <- repo.findByRefreshToken(expiredToken.token)
-        yield assertTrue(retrieved.isEmpty)
+          retrieved <- repo.findByRefreshToken(expiredToken.refreshToken).exit
+        yield assertTrue(retrieved.isFailure)
       },
       test("deleteByRefreshToken should remove token") {
         for
           repo <- ZIO.service[TokenRepository]
-          token = createTestRefreshToken()
+          token = createTestRefreshTokenEntity()
           _ <- repo.saveRefreshToken(token)
-          beforeDelete <- repo.findByRefreshToken(token.token)
-          _ <- repo.deleteByRefreshToken(token.token)
-          afterDelete <- repo.findByRefreshToken(token.token)
-        yield assertTrue(
-          beforeDelete.isDefined,
-          afterDelete.isEmpty,
-        )
+          beforeDelete <- repo.findByRefreshToken(token.refreshToken).exit
+          _ <- repo.deleteByRefreshToken(token.refreshToken)
+          afterDelete <- repo.findByRefreshToken(token.refreshToken).exit
+        yield assertTrue(beforeDelete.isSuccess && afterDelete.isFailure)
       },
       test("deleteAllByUserId should remove all user tokens") {
         for
           repo <- ZIO.service[TokenRepository]
           userIdString = "multi-token-user"
-          userIdObj = unsafeUserId(userIdString)
-          token1 = createTestRefreshToken(userIdString)
-          token2 = createTestRefreshToken(userIdString)
-          otherUserToken = createTestRefreshToken("other-user")
+          token1 = createTestRefreshTokenEntity(userIdString)
+          token2 = createTestRefreshTokenEntity(userIdString)
+          otherUserToken = createTestRefreshTokenEntity("other-user")
           _ <- repo.saveRefreshToken(token1)
           _ <- repo.saveRefreshToken(token2)
           _ <- repo.saveRefreshToken(otherUserToken)
-          beforeDelete1 <- repo.findByRefreshToken(token1.token)
-          beforeDelete2 <- repo.findByRefreshToken(token2.token)
-          beforeDeleteOther <- repo.findByRefreshToken(otherUserToken.token)
-          _ <- repo.deleteAllByUserId(userIdObj)
-          afterDelete1 <- repo.findByRefreshToken(token1.token)
-          afterDelete2 <- repo.findByRefreshToken(token2.token)
-          afterDeleteOther <- repo.findByRefreshToken(otherUserToken.token)
+          beforeDelete1 <- repo.findByRefreshToken(token1.refreshToken).exit
+          beforeDelete2 <- repo.findByRefreshToken(token2.refreshToken).exit
+          beforeDeleteOther <- repo.findByRefreshToken(otherUserToken.refreshToken).exit
+          _ <- repo.deleteAllByUserId(userIdString)
+          afterDelete1 <- repo.findByRefreshToken(token1.refreshToken).exit
+          afterDelete2 <- repo.findByRefreshToken(token2.refreshToken).exit
+          afterDeleteOther <- repo.findByRefreshToken(otherUserToken.refreshToken).exit
         yield assertTrue(
-          beforeDelete1.isDefined,
-          beforeDelete2.isDefined,
-          beforeDeleteOther.isDefined,
-          afterDelete1.isEmpty,
-          afterDelete2.isEmpty,
-          afterDeleteOther.isDefined,
+          beforeDelete1.isSuccess,
+          afterDelete1.isFailure,
+          beforeDelete2.isSuccess,
+          afterDelete2.isFailure,
+          beforeDeleteOther.isSuccess,
+          afterDeleteOther.isSuccess,
         )
       },
       test("cleanExpiredTokens should remove expired tokens") {
         for
           repo <- ZIO.service[TokenRepository]
           quillContext <- ZIO.service[Quill.Postgres[SnakeCase]]
-          expiredToken = createTestRefreshToken(expireInSeconds = -1)
-          validToken = createTestRefreshToken(expireInSeconds = 3600)
+          expiredToken = createTestRefreshTokenEntity(expireInSeconds = -1)
+          validToken = createTestRefreshTokenEntity(expireInSeconds = 3600)
           _ <- repo.saveRefreshToken(expiredToken)
           _ <- repo.saveRefreshToken(validToken)
-          findExpiredBeforeClean <- repo.findByRefreshToken(expiredToken.token)
-          findValidBeforeClean <- repo.findByRefreshToken(validToken.token)
+          findExpiredBeforeClean <- repo.findByRefreshToken(expiredToken.refreshToken).exit
+          findValidBeforeClean <- repo.findByRefreshToken(validToken.refreshToken).exit
           _ <- repo.cleanExpiredTokens()
-          validAfterClean <- repo.findByRefreshToken(validToken.token)
+          validAfterClean <- repo.findByRefreshToken(validToken.refreshToken).exit
         yield assertTrue(
-          findExpiredBeforeClean.isEmpty,
-          findValidBeforeClean.isDefined,
-          validAfterClean.isDefined,
+          findExpiredBeforeClean.isFailure,
+          findValidBeforeClean.isSuccess,
+          validAfterClean.isSuccess,
         )
       },
     ).provide(testEnvLayer.mapError(TestFailure.die))

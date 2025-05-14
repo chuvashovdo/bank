@@ -2,10 +2,9 @@ package user.repository
 
 import user.models.User
 import zio.*
-import user.models.UserId
 trait UserRepository:
-  def findById(id: UserId): Task[Option[User]]
-  def findByEmail(email: String): Task[Option[User]]
+  def findById(id: String): Task[User]
+  def findByEmail(email: String): Task[User]
   def create(
     email: String,
     passwordHash: String,
@@ -13,17 +12,17 @@ trait UserRepository:
     lastName: Option[String],
   ): Task[User]
   def update(
-    id: UserId,
+    id: String,
     firstName: Option[String],
     lastName: Option[String],
-  ): Task[Option[User]]
-  def updatePassword(id: UserId, passwordHash: String): Task[Boolean]
-  def deactivate(id: UserId): Task[Boolean]
+  ): Task[User]
+  def updatePassword(id: String, passwordHash: String): Task[Unit]
+  def deactivate(id: String): Task[Unit]
 
 object UserRepository:
-  def findById(id: UserId): RIO[UserRepository, Option[User]] =
+  def findById(id: String): RIO[UserRepository, User] =
     ZIO.serviceWithZIO[UserRepository](_.findById(id))
-  def findByEmail(email: String): RIO[UserRepository, Option[User]] =
+  def findByEmail(email: String): RIO[UserRepository, User] =
     ZIO.serviceWithZIO[UserRepository](_.findByEmail(email))
   def create(
     email: String,
@@ -33,12 +32,12 @@ object UserRepository:
   ): RIO[UserRepository, User] =
     ZIO.serviceWithZIO[UserRepository](_.create(email, passwordHash, firstName, lastName))
   def update(
-    id: UserId,
+    id: String,
     firstName: Option[String],
     lastName: Option[String],
-  ): RIO[UserRepository, Option[User]] =
+  ): RIO[UserRepository, User] =
     ZIO.serviceWithZIO[UserRepository](_.update(id, firstName, lastName))
-  def updatePassword(id: UserId, passwordHash: String): RIO[UserRepository, Boolean] =
+  def updatePassword(id: String, passwordHash: String): RIO[UserRepository, Unit] =
     ZIO.serviceWithZIO[UserRepository](_.updatePassword(id, passwordHash))
-  def deactivate(id: UserId): RIO[UserRepository, Boolean] =
+  def deactivate(id: String): RIO[UserRepository, Unit] =
     ZIO.serviceWithZIO[UserRepository](_.deactivate(id))

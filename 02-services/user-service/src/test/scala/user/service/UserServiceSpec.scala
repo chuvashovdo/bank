@@ -8,6 +8,7 @@ import user.repository.*
 import user.service.*
 import java.util.UUID
 import common.errors.*
+import org.mindrot.jbcrypt.BCrypt
 
 object UserServiceSpec extends ZIOSpecDefault:
   private def valid[E <: Throwable, A](either: Either[E, A], fieldName: String): A =
@@ -26,13 +27,12 @@ object UserServiceSpec extends ZIOSpecDefault:
   private def unsafeLastName(name: String): LastName =
     LastName(name).getOrElse(throw new RuntimeException("Invalid LastName in mock setup"))
 
-  private def hashPassword(password: String): String =
-    s"hashed_${password}_test"
-
-  private val password1Hash =
-    hashPassword("password")
-  private val password2Hash =
-    hashPassword("password2")
+  private val passwordUser1Hashed: String =
+    BCrypt.hashpw("password", BCrypt.gensalt(4))
+  private val passwordUser2Hashed: String =
+    BCrypt.hashpw("password2", BCrypt.gensalt(4))
+  private val passwordUser3Hashed: String =
+    BCrypt.hashpw("password", BCrypt.gensalt(4))
 
   class MockUserRepository extends UserRepository:
     private var users: Map[UserId, User] =
@@ -40,7 +40,7 @@ object UserServiceSpec extends ZIOSpecDefault:
         unsafeUserId("1") -> User(
           unsafeUserId("1"),
           unsafeEmail("test@test.com"),
-          password1Hash,
+          passwordUser1Hashed,
           Some(unsafeFirstName("Test")),
           Some(unsafeLastName("User")),
           isActive = true,
@@ -48,7 +48,7 @@ object UserServiceSpec extends ZIOSpecDefault:
         unsafeUserId("2") -> User(
           unsafeUserId("2"),
           unsafeEmail("test2@test.com"),
-          password2Hash,
+          passwordUser2Hashed,
           Some(unsafeFirstName("Test2")),
           Some(unsafeLastName("User2")),
           isActive = true,
@@ -56,7 +56,7 @@ object UserServiceSpec extends ZIOSpecDefault:
         unsafeUserId("3") -> User(
           unsafeUserId("3"),
           unsafeEmail("testdeactivate@test.com"),
-          password1Hash,
+          passwordUser3Hashed,
           Some(unsafeFirstName("Test")),
           Some(unsafeLastName("User")),
           isActive = false,
@@ -66,11 +66,13 @@ object UserServiceSpec extends ZIOSpecDefault:
     val nonExistentId =
       unsafeUserId("999")
 
-    override def findById(id: UserId): Task[Option[User]] =
-      ZIO.succeed(users.get(id))
+    override def findById(id: String): Task[User] =
+      ZIO.attempt(users.get(unsafeUserId(id)).get).mapError(_ => new UserNotFoundError(id))
 
-    override def findByEmail(email: String): Task[Option[User]] =
-      ZIO.succeed(users.values.find(_.email.value == email))
+    override def findByEmail(email: String): Task[User] =
+      ZIO
+        .attempt(users.values.find(_.email.value == email).get)
+        .mapError(_ => new UserNotFoundError(email))
 
     override def create(
       emailStr: String,
@@ -87,118 +89,46 @@ object UserServiceSpec extends ZIOSpecDefault:
       ZIO.succeed(newUser)
 
     override def update(
-      id: UserId,
+      id: String,
       firstNameStr: Option[String],
       lastNameStr: Option[String],
-    ): Task[Option[User]] =
-      users.get(id).fold(ZIO.succeed(None)) { user =>
-        if !user.isActive then ZIO.succeed(None)
+    ): Task[User] =
+      users.get(unsafeUserId(id)).fold(ZIO.fail(new UserNotFoundError(id))) { user =>
+        if !user.isActive then ZIO.fail(new UserNotActiveError(id))
         else
           val updatedUser =
             user.copy(
               firstName = firstNameStr.map(unsafeFirstName),
               lastName = lastNameStr.map(unsafeLastName),
             )
-          users += (id -> updatedUser)
-          ZIO.succeed(Some(updatedUser))
+          users += (unsafeUserId(id) -> updatedUser)
+          ZIO.succeed(updatedUser)
       }
 
-    override def updatePassword(id: UserId, passwordHash: String): Task[Boolean] =
-      users.get(id).fold(ZIO.succeed(false)) { user =>
-        if !user.isActive then ZIO.succeed(false)
+    override def updatePassword(id: String, passwordHash: String): Task[Unit] =
+      users.get(unsafeUserId(id)).fold(ZIO.fail(new UserNotFoundError(id))) { user =>
+        if !user.isActive then ZIO.fail(new UserNotActiveError(id))
         else
           val updatedUser = user.copy(passwordHash = passwordHash)
-          users += (id -> updatedUser)
-          ZIO.succeed(true)
+          users += (unsafeUserId(id) -> updatedUser)
+          ZIO.succeed(())
       }
 
-    override def deactivate(id: UserId): Task[Boolean] =
-      users.get(id).fold(ZIO.succeed(false)) { user =>
+    override def deactivate(id: String): Task[Unit] =
+      users.get(unsafeUserId(id)).fold(ZIO.fail(new UserNotFoundError(id))) { user =>
         val updatedUser = user.copy(isActive = false)
-        users += (id -> updatedUser)
-        ZIO.succeed(true)
+        users += (unsafeUserId(id) -> updatedUser)
+        ZIO.succeed(())
       }
 
   val mockUserRepositoryLayer: ULayer[UserRepository] =
     ZLayer.succeed(new MockUserRepository)
 
-  class MockUserService(userRepository: UserRepository) extends UserService:
-    override def findUserById(id: UserId): Task[Option[User]] =
-      userRepository.findById(id)
-
-    override def findUserByEmail(email: Email): Task[Option[User]] =
-      userRepository.findByEmail(email.value)
-
-    override def registerUser(
-      email: Email,
-      password: Password,
-      firstName: Option[FirstName],
-      lastName: Option[LastName],
-    ): Task[User] =
-      for
-        existingUser <- userRepository.findByEmail(email.value)
-        _ <- ZIO.fail(UserAlreadyExistsError(email)).when(existingUser.isDefined)
-        passwordHash = hashPassword(password.value) // Используем наш упрощенный метод хеширования
-        user <-
-          userRepository.create(
-            email = email.value,
-            passwordHash = passwordHash,
-            firstName = firstName.map(_.value),
-            lastName = lastName.map(_.value),
-          )
-      yield user
-
-    override def validateCredentials(email: Email, password: Password): Task[Option[User]] =
-      for
-        userOpt <- userRepository.findByEmail(email.value)
-        user <- ZIO.fromOption(userOpt).orElseFail(InvalidCredentialsError())
-        _ <- ZIO.fail(UserNotActiveError(email.value)).when(!user.isActive)
-        // Проверяем пароль по нашей упрощенной схеме
-        isValid = user.passwordHash == hashPassword(password.value)
-        _ <- ZIO.fail(InvalidCredentialsError()).when(!isValid)
-      yield Some(user)
-
-    override def updateUser(
-      id: UserId,
-      firstName: Option[FirstName],
-      lastName: Option[LastName],
-    ): Task[Option[User]] =
-      userRepository.update(id, firstName.map(_.value), lastName.map(_.value))
-
-    override def changePassword(
-      id: UserId,
-      oldPassword: Password,
-      newPassword: Password,
-    ): Task[Boolean] =
-      for
-        userOpt <- userRepository.findById(id)
-        user <- ZIO.fromOption(userOpt).orElseFail(UserNotFoundError(id.value))
-        _ <- ZIO.fail(UserNotActiveError(id.value)).when(!user.isActive)
-        // Проверяем пароль по нашей упрощенной схеме
-        isValid = user.passwordHash == hashPassword(oldPassword.value)
-        _ <- ZIO.fail(InvalidOldPasswordError(id)).when(!isValid)
-        newHash = hashPassword(newPassword.value)
-        updated <- userRepository.updatePassword(id, newHash)
-      yield updated
-
-    override def deactivateUser(id: UserId): Task[Boolean] =
-      for
-        userOpt <- userRepository.findById(id)
-        _ <- ZIO.fromOption(userOpt).orElseFail(UserNotFoundError(id.value))
-        deactivated <- userRepository.deactivate(id)
-      yield deactivated
-
-  val mockUserServiceLayer: ZLayer[UserRepository, Nothing, UserService] =
-    ZLayer:
-      for userRepository <- ZIO.service[UserRepository]
-      yield new MockUserService(userRepository)
-
   val userServiceLayer: ZLayer[Any, Nothing, UserService & UserRepository] =
-    ZLayer
-      .make[UserService & UserRepository](
-        mockUserServiceLayer,
-        mockUserRepositoryLayer,
-      )
+    ZLayer.make[UserService & UserRepository](
+      UserServiceImpl.layer,
+      mockUserRepositoryLayer,
+    )
 
   def spec =
     suite("UserService")(
@@ -206,15 +136,15 @@ object UserServiceSpec extends ZIOSpecDefault:
         for
           userService <- ZIO.service[UserService]
           userIdToFind = unsafeUserId("1")
-          userOpt <- userService.findUserById(userIdToFind)
-        yield assertTrue(userOpt.isDefined && userOpt.get.id.equals(userIdToFind))
+          user <- userService.findUserById(userIdToFind)
+        yield assertTrue(user.id.equals(userIdToFind))
       }.provide(userServiceLayer),
       test("findByEmail should return user by email") {
         for
           userService <- ZIO.service[UserService]
           emailToFind = unsafeEmail("test@test.com")
-          userOpt <- userService.findUserByEmail(emailToFind)
-        yield assertTrue(userOpt.isDefined && userOpt.get.email.equals(emailToFind))
+          user <- userService.findUserByEmail(emailToFind)
+        yield assertTrue(user.email.equals(emailToFind))
       }.provide(userServiceLayer),
       test("registerUser should create user") {
         for
@@ -246,8 +176,8 @@ object UserServiceSpec extends ZIOSpecDefault:
           userService <- ZIO.service[UserService]
           email = unsafeEmail("test@test.com")
           password = valid(Password("password"), "Password")
-          userOpt <- userService.validateCredentials(email, password)
-        yield assertTrue(userOpt.isDefined && userOpt.get.email.equals(email))
+          user <- userService.validateCredentials(email, password)
+        yield assertTrue(user.email.equals(email))
       }.provide(userServiceLayer),
       test("validateCredentials should fail for deactivated user with UserNotActiveError") {
         for
@@ -271,10 +201,9 @@ object UserServiceSpec extends ZIOSpecDefault:
           userIdToUpdate = unsafeUserId("1")
           newFirstName = Some(valid(FirstName("New"), "FirstName"))
           newLastName = Some(valid(LastName("UserUpdated"), "LastName"))
-          updatedUserOpt <- userService.updateUser(userIdToUpdate, newFirstName, newLastName)
-        yield assertTrue(updatedUserOpt.isDefined) &&
-        assertTrue(updatedUserOpt.get.firstName.map(_.value) == newFirstName.map(_.value)) &&
-        assertTrue(updatedUserOpt.get.lastName.map(_.value) == newLastName.map(_.value))
+          updatedUser <- userService.updateUser(userIdToUpdate, newFirstName, newLastName)
+        yield assertTrue(updatedUser.firstName.map(_.value) == newFirstName.map(_.value)) &&
+        assertTrue(updatedUser.lastName.map(_.value) == newLastName.map(_.value))
       }.provide(userServiceLayer),
       test("updateUser should return None for deactivated user") {
         for
@@ -282,8 +211,8 @@ object UserServiceSpec extends ZIOSpecDefault:
           userIdToUpdate = unsafeUserId("3")
           newFirstName = Some(valid(FirstName("New"), "FirstName"))
           newLastName = Some(valid(LastName("UserUpdated"), "LastName"))
-          userOpt <- userService.updateUser(userIdToUpdate, newFirstName, newLastName)
-        yield assertTrue(userOpt.isEmpty)
+          user <- userService.updateUser(userIdToUpdate, newFirstName, newLastName).exit
+        yield assertTrue(user.isFailure)
       }.provide(userServiceLayer),
       test("updateUser should return None for non-existent user") {
         for
@@ -292,8 +221,8 @@ object UserServiceSpec extends ZIOSpecDefault:
           nonExistentUserId = repo.asInstanceOf[MockUserRepository].nonExistentId
           newFirstName = Some(valid(FirstName("New"), "FirstName"))
           newLastName = Some(valid(LastName("UserUpdated"), "LastName"))
-          userOpt <- userService.updateUser(nonExistentUserId, newFirstName, newLastName)
-        yield assertTrue(userOpt.isEmpty)
+          user <- userService.updateUser(nonExistentUserId, newFirstName, newLastName).exit
+        yield assertTrue(user.isFailure)
       }.provide(userServiceLayer),
       test("changePassword should change password") {
         for
@@ -301,8 +230,8 @@ object UserServiceSpec extends ZIOSpecDefault:
           userIdToChange = unsafeUserId("1")
           oldPassword = valid(Password("password"), "OldPassword")
           newPassword = valid(Password("newpassword"), "NewPassword")
-          result <- userService.changePassword(userIdToChange, oldPassword, newPassword)
-        yield assertTrue(result)
+          result <- userService.changePassword(userIdToChange, oldPassword, newPassword).exit
+        yield assertTrue(result.isSuccess)
       }.provide(userServiceLayer),
       test("changePassword should fail for deactivated user with UserNotActiveError") {
         for
@@ -336,8 +265,8 @@ object UserServiceSpec extends ZIOSpecDefault:
         for
           userService <- ZIO.service[UserService]
           userIdToDeactivate = unsafeUserId("1")
-          result <- userService.deactivateUser(userIdToDeactivate)
-        yield assertTrue(result)
+          result <- userService.deactivateUser(userIdToDeactivate).exit
+        yield assertTrue(result.isSuccess)
       }.provide(userServiceLayer),
       test("deactivateUser should fail for non-existent user with UserNotFoundError") {
         for

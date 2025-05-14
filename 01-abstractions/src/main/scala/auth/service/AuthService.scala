@@ -1,11 +1,11 @@
 package auth.service
 
 import zio.*
-import jwt.models.*
+import jwt.models.AccessToken
 import user.models.{ Email, FirstName, LastName, Password, UserId }
 
 trait AuthService:
-  def login(email: Email, password: Password): Task[Option[AccessToken]]
+  def login(email: Email, password: Password): Task[AccessToken]
   def register(
     email: Email,
     password: Password,
@@ -15,7 +15,7 @@ trait AuthService:
   def logout(userId: UserId): Task[Unit]
 
 object AuthService:
-  def login(email: Email, password: Password): RIO[AuthService, Option[AccessToken]] =
+  def login(email: Email, password: Password): RIO[AuthService, AccessToken] =
     ZIO.serviceWithZIO[AuthService](_.login(email, password))
   def register(
     email: Email,

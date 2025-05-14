@@ -2,7 +2,7 @@ package common.models
 
 import zio.json.*
 import java.time.Instant
-import common.errors.ValidationError
+import common.errors.*
 
 final case class ErrorDetail(
   field: Option[String],
@@ -38,9 +38,8 @@ object ErrorResponse:
       errors.map { ve =>
         val (fieldName, specificCode) =
           ve match
-            case e: common.errors.InvalidDataFormatError => (Some(e.fieldName), "INVALID_FORMAT")
-            case e: common.errors.ValueCannotBeEmptyError =>
-              (Some(e.fieldName), "VALUE_CANNOT_BE_EMPTY")
+            case e: InvalidDataFormatError => (Some(e.fieldName), "INVALID_FORMAT")
+            case e: ValueCannotBeEmptyError => (Some(e.fieldName), "VALUE_CANNOT_BE_EMPTY")
         ErrorDetail(
           field = fieldName,
           code = specificCode,
@@ -54,4 +53,18 @@ object ErrorResponse:
       message = generalMessage,
       path = path,
       details = Some(errorDetails).filter(_.nonEmpty),
+    )
+
+  def fromBusinessError(
+    httpStatus: Int,
+    path: String,
+    error: BusinessError,
+  ): ErrorResponse =
+    ErrorResponse(
+      timestamp = Instant.now(),
+      status = httpStatus,
+      errorType = error.errorCode,
+      message = error.message,
+      path = path,
+      details = None,
     )

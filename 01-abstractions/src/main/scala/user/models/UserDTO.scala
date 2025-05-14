@@ -42,7 +42,7 @@ object ChangePasswordRequest:
     DeriveJsonCodec.gen[ChangePasswordRequest]
 
 final case class UserResponse(
-  id: String,
+  id: UserId,
   email: Email,
   firstName: Option[FirstName],
   lastName: Option[LastName],

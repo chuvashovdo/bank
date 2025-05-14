@@ -8,27 +8,23 @@ import sttp.tapir.swagger.bundle.SwaggerInterpreter
 import sttp.tapir.server.ziohttp.ZioHttpInterpreter
 import sttp.tapir.server.ServerEndpoint
 import user.service.*
-import user.mapper.UserResponseMapper
 
 class UserApi(
   authService: AuthService,
   jwtService: JwtService,
   userService: UserService,
-  userResponseMapper: UserResponseMapper,
 ):
   private val authEndpoints =
     new AuthEndpoints(
       authService,
       jwtService,
       userService,
-      userResponseMapper,
     )
 
   private val userAccountEndpoints =
     new UserAccountEndpoints(
       userService,
       authService,
-      userResponseMapper,
       jwtService,
     )
 
@@ -50,11 +46,10 @@ class UserApi(
     ZioHttpInterpreter().toHttp(allEndpoints)
 
 object UserApi:
-  val layer: URLayer[AuthService & JwtService & UserService & UserResponseMapper, UserApi] =
+  val layer: URLayer[AuthService & JwtService & UserService, UserApi] =
     ZLayer:
       for
         authService <- ZIO.service[AuthService]
         jwtService <- ZIO.service[JwtService]
         userService <- ZIO.service[UserService]
-        userResponseMapper <- ZIO.service[UserResponseMapper]
-      yield new UserApi(authService, jwtService, userService, userResponseMapper)
+      yield new UserApi(authService, jwtService, userService)

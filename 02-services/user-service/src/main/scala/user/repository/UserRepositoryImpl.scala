@@ -10,7 +10,7 @@ import io.getquill.*
 import io.getquill.jdbczio.Quill
 import user.mapper.UserEntityMapper
 import user.models.{ Email, FirstName, LastName }
-
+import common.errors.UserNotFoundError
 class UserRepositoryImpl(quill: Quill.Postgres[SnakeCase], userEntityMapper: UserEntityMapper)
     extends UserRepository:
   import quill.*
@@ -18,18 +18,28 @@ class UserRepositoryImpl(quill: Quill.Postgres[SnakeCase], userEntityMapper: Use
   inline given userSchemaMeta: SchemaMeta[UserEntity] =
     schemaMeta("users")
 
-  override def findById(id: UserId): Task[Option[User]] =
+  override def findById(id: String): Task[User] =
     for
-      userEntity <- run(quote(query[UserEntity].filter(_.id == lift(id.value))))
-      oneUser <- ZIO.succeed(userEntity.headOption)
-      user <- ZIO.foreach(oneUser)(userEntityMapper.toUser(_))
+      userEntityOpt <-
+        run(quote(query[UserEntity].filter(_.id == lift(id)).take(1)))
+          .map(_.headOption)
+      user <-
+        ZIO
+          .fromOption(userEntityOpt)
+          .mapError { _ => UserNotFoundError(id) }
+          .flatMap(userEntityMapper.toUser)
     yield user
 
-  override def findByEmail(emailRaw: String): Task[Option[User]] =
+  override def findByEmail(emailRaw: String): Task[User] =
     for
-      userEntity <- run(quote(query[UserEntity].filter(_.email == lift(emailRaw))))
-      oneUser <- ZIO.succeed(userEntity.headOption)
-      user <- ZIO.foreach(oneUser)(userEntityMapper.toUser(_))
+      userEntityOpt <-
+        run(quote(query[UserEntity].filter(_.email == lift(emailRaw)).take(1)))
+          .map(_.headOption)
+      user <-
+        ZIO
+          .fromOption(userEntityOpt)
+          .mapError { _ => UserNotFoundError(emailRaw) }
+          .flatMap(userEntityMapper.toUser)
     yield user
 
   override def create(
@@ -56,7 +66,7 @@ class UserRepositoryImpl(quill: Quill.Postgres[SnakeCase], userEntityMapper: Use
             )
           )
 
-      validFirstName <-
+      validFirstNameOpt <-
         ZIO.foreach(firstNameRaw) { name =>
           ZIO
             .fromEither(FirstName(name))
@@ -67,7 +77,7 @@ class UserRepositoryImpl(quill: Quill.Postgres[SnakeCase], userEntityMapper: Use
             )
         }
 
-      validLastName <-
+      validLastNameOpt <-
         ZIO.foreach(lastNameRaw) { name =>
           ZIO
             .fromEither(LastName(name))
@@ -82,8 +92,8 @@ class UserRepositoryImpl(quill: Quill.Postgres[SnakeCase], userEntityMapper: Use
           id = validatedUserId,
           email = validEmail,
           passwordHash = passwordHash,
-          firstName = validFirstName,
-          lastName = validLastName,
+          firstName = validFirstNameOpt,
+          lastName = validLastNameOpt,
           isActive = true,
         )
       userEntity <- userEntityMapper.fromUser(user, Instant.now(), Instant.now())
@@ -95,100 +105,81 @@ class UserRepositoryImpl(quill: Quill.Postgres[SnakeCase], userEntityMapper: Use
     yield user
 
   override def update(
-    id: UserId,
+    id: String,
     firstNameRaw: Option[String],
     lastNameRaw: Option[String],
-  ): Task[Option[User]] =
+  ): Task[User] =
     for
-      existingUserOpt <- findById(id)
-      result <-
-        existingUserOpt match
-          case Some(existingUser) =>
-            for
-              validFirstName <-
-                ZIO.foreach(firstNameRaw) { name =>
-                  ZIO
-                    .fromEither(FirstName(name))
-                    .mapError(err =>
-                      new IllegalArgumentException(
-                        s"Invalid first name for update: ${err.developerFriendlyMessage}"
-                      )
-                    )
-                }
-              validLastName <-
-                ZIO.foreach(lastNameRaw) { name =>
-                  ZIO
-                    .fromEither(LastName(name))
-                    .mapError(err =>
-                      new IllegalArgumentException(
-                        s"Invalid last name for update: ${err.developerFriendlyMessage}"
-                      )
-                    )
-                }
+      existingUser: User <- findById(id)
 
-              now = Instant.now()
-              updatedUser =
-                existingUser.copy(
-                  firstName = validFirstName,
-                  lastName = validLastName,
-                )
-
-              existingEntityCreatedAt <-
-                run(quote(query[UserEntity].filter(_.id == lift(id.value)).map(_.createdAt)))
-                  .map(_.headOption.getOrElse(now))
-
-              entityToUpdate <- userEntityMapper.fromUser(updatedUser, existingEntityCreatedAt, now)
-
-              _ <-
-                run:
-                  quote:
-                    query[UserEntity]
-                      .filter(_.id == lift(id.value))
-                      .update(
-                        _.firstName -> lift(entityToUpdate.firstName),
-                        _.lastName -> lift(entityToUpdate.lastName),
-                        _.updatedAt -> lift(entityToUpdate.updatedAt),
-                      )
-            yield Some(updatedUser)
-          case None => ZIO.succeed(None)
-    yield result
-
-  override def updatePassword(id: UserId, passwordHash: String): Task[Boolean] =
-    for
-      existingUserOpt <- findById(id)
-      result <-
-        existingUserOpt match
-          case Some(_) =>
-            run {
-              quote:
-                query[UserEntity]
-                  .filter(_.id == lift(id.value))
-                  .update(_.passwordHash -> lift(passwordHash), _.updatedAt -> lift(Instant.now()))
-            }.map(_ > 0)
-          case None =>
-            ZIO.succeed(false)
-    yield result
-
-  override def deactivate(id: UserId): Task[Boolean] =
-    for
-      existingUserOpt <- findById(id)
-      result <-
-        existingUserOpt match
-          case Some(_) =>
-            val now = Instant.now()
-            run(
-              quote(
-                query[UserEntity]
-                  .filter(_.id == lift(id.value))
-                  .update(
-                    _.isActive -> lift(false),
-                    _.updatedAt -> lift(now),
-                  )
+      validFirstNameOpt: Option[FirstName] <-
+        ZIO.foreach(firstNameRaw) { name =>
+          ZIO
+            .fromEither(FirstName(name))
+            .mapError(e =>
+              new IllegalArgumentException(
+                s"Invalid first name for update: ${e.developerFriendlyMessage}"
               )
-            ).map(_ > 0)
-          case None =>
-            ZIO.succeed(false)
-    yield result
+            )
+        }
+      validLastNameOpt: Option[LastName] <-
+        ZIO.foreach(lastNameRaw) { name =>
+          ZIO
+            .fromEither(LastName(name))
+            .mapError(e =>
+              new IllegalArgumentException(
+                s"Invalid last name for update: ${e.developerFriendlyMessage}"
+              )
+            )
+        }
+
+      now = Instant.now()
+
+      updatedUserDomain: User =
+        existingUser.copy(
+          firstName = validFirstNameOpt.orElse(existingUser.firstName),
+          lastName = validLastNameOpt.orElse(existingUser.lastName),
+        )
+
+      _ <-
+        run:
+          quote:
+            query[UserEntity]
+              .filter(_.id == lift(id))
+              .update(
+                setValue => setValue.firstName -> lift(validFirstNameOpt.map(_.value)),
+                setValue => setValue.lastName -> lift(validLastNameOpt.map(_.value)),
+                _.updatedAt -> lift(now),
+              )
+    yield updatedUserDomain
+
+  override def updatePassword(id: String, passwordHash: String): Task[Unit] =
+    for
+      _ <- findById(id)
+      _ <-
+        run:
+          quote:
+            query[UserEntity]
+              .filter(_.id == lift(id))
+              .update(_.passwordHash -> lift(passwordHash), _.updatedAt -> lift(Instant.now()))
+    yield ()
+
+  override def deactivate(id: String): Task[Unit] =
+    for
+      _ <- findById(id)
+      now = Instant.now()
+      _ <-
+        run(
+          quote(
+            query[UserEntity]
+              .filter(_.id == lift(id))
+              .update(
+                _.isActive -> lift(false),
+                _.updatedAt -> lift(now),
+              )
+          )
+        )
+    yield ()
 
 object UserRepositoryImpl:
   val layer: URLayer[Quill.Postgres[SnakeCase] & UserEntityMapper, UserRepository] =

@@ -38,6 +38,9 @@ object UserDTOSpec extends ZIOSpecDefault:
   val optionalLastNameGen: Gen[Any, Option[LastName]] =
     Gen.option(lastNameGen)
 
+  val userIdGen: Gen[Any, UserId] =
+    Gen.alphaNumericStringBounded(5, 10).map(UserId.apply).collect { case Right(userId) => userId }
+
   // Генератор для RegisterUserRequest
   val registerUserRequestGen: Gen[Any, RegisterUserRequest] =
     for
@@ -57,11 +60,11 @@ object UserDTOSpec extends ZIOSpecDefault:
   // Генератор для UserResponse
   val userResponseGen: Gen[Any, UserResponse] =
     for
-      id <- Gen.alphaNumericStringBounded(5, 10)
       email <- emailGen
       firstName <- optionalFirstNameGen
       lastName <- optionalLastNameGen
-    yield UserResponse(id, email, firstName, lastName)
+      userId <- userIdGen
+    yield UserResponse(userId, email, firstName, lastName)
 
   def spec =
     suite("User DTO models")(

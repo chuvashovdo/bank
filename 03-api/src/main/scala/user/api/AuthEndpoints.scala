@@ -2,7 +2,7 @@ package user.api
 
 import auth.service.*
 import common.models.ErrorResponse
-import common.TapirSchemas.*
+import common.TapirSchemas.given
 import jwt.service.*
 import sttp.model.StatusCode
 import sttp.tapir.*
@@ -12,7 +12,6 @@ import user.models.{ RegisterUserRequest, LoginRequest, AuthResponse, RefreshTok
 import user.service.*
 import zio.*
 import java.time.Instant
-import user.mapper.UserResponseMapper
 import sttp.tapir.server.ServerEndpoint
 
 /** Объект-компаньон для хранения констант путей */
@@ -31,7 +30,6 @@ class AuthEndpoints(
   authService: AuthService,
   jwtService: JwtService,
   userService: UserService,
-  userResponseMapper: UserResponseMapper,
 ) extends ApiEndpoint:
   import AuthEndpoints.* // Импортируем пути из объекта-компаньона
 
@@ -97,39 +95,10 @@ class AuthEndpoints(
     userId: UserId,
     path: String,
   ): ZIO[Any, ErrorResponse, UserResponse] =
-    for
-      userOpt <-
-        userService
-          .findUserById(userId)
-          .mapError { e =>
-            createErrorResponse(
-              StatusCode.InternalServerError.code,
-              "USER_LOOKUP_ERROR",
-              s"Failed to lookup user by ID: ${e.getMessage}",
-              path,
-            )
-          }
-      user <-
-        ZIO
-          .fromOption(userOpt)
-          .orElseFail(
-            createErrorResponse(
-              StatusCode.NotFound.code,
-              "USER_NOT_FOUND",
-              "User not found.",
-              path,
-            )
-          )
-      userResponse <-
-        userResponseMapper.fromUser(user).mapError { e =>
-          createErrorResponse(
-            StatusCode.InternalServerError.code,
-            "RESPONSE_MAPPING_ERROR",
-            s"Failed to map user response: ${e.getMessage}",
-            path,
-          )
-        }
-    yield userResponse
+    userService
+      .findUserById(userId)
+      .mapError(handleCommonErrors(path))
+      .map(user => UserResponse(user.id, user.email, user.firstName, user.lastName))
 
   private def handleRegister(request: RegisterUserRequest): ZIO[Any, ErrorResponse, AuthResponse] =
     for
@@ -148,14 +117,7 @@ class AuthEndpoints(
       refreshToken <-
         jwtService
           .createRefreshToken(accessToken.userId, Instant.now())
-          .mapError { e =>
-            createErrorResponse(
-              StatusCode.InternalServerError.code,
-              "TOKEN_CREATION_ERROR",
-              "Failed to create refresh token: " + e.getMessage,
-              registerPath,
-            )
-          }
+          .mapError(handleCommonErrors(registerPath))
     yield AuthResponse(
       accessToken = accessToken.token,
       refreshToken = refreshToken.token,
@@ -165,35 +127,17 @@ class AuthEndpoints(
 
   private def handleLogin(request: LoginRequest): ZIO[Any, ErrorResponse, AuthResponse] =
     for
-      accessTokenOpt <-
+      accessToken <-
         authService
           .login(request.email, request.password)
           .mapError(handleCommonErrors(loginPath))
-
-      accessToken <-
-        ZIO
-          .fromOption(accessTokenOpt)
-          .orElseFail:
-            createErrorResponse(
-              StatusCode.Unauthorized.code,
-              "INVALID_CREDENTIALS",
-              "Invalid email or password.",
-              loginPath,
-            )
 
       userResponse <- findAndMapUserToResponse(accessToken.userId, loginPath)
 
       refreshToken <-
         jwtService
           .createRefreshToken(accessToken.userId, Instant.now())
-          .mapError { e =>
-            createErrorResponse(
-              StatusCode.InternalServerError.code,
-              "TOKEN_CREATION_ERROR",
-              s"Failed to create refresh token: ${e.getMessage}",
-              loginPath,
-            )
-          }
+          .mapError(handleCommonErrors(loginPath))
     yield AuthResponse(
       accessToken = accessToken.token,
       refreshToken = refreshToken.token,
@@ -205,42 +149,17 @@ class AuthEndpoints(
     request: RefreshTokenRequest
   ): ZIO[Any, ErrorResponse, AuthResponse] =
     for
-      newAccessTokenOpt <-
-        jwtService
-          .refreshToken(request.refreshToken)
-          .mapError { e =>
-            createErrorResponse(
-              StatusCode.InternalServerError.code,
-              "TOKEN_REFRESH_ERROR",
-              s"Error during token refresh: ${e.getMessage}",
-              refreshPath,
-            )
-          }
-
       newAccessToken <-
-        ZIO
-          .fromOption(newAccessTokenOpt)
-          .orElseFail:
-            createErrorResponse(
-              StatusCode.Unauthorized.code,
-              "INVALID_OR_EXPIRED_REFRESH_TOKEN",
-              "Invalid or expired refresh token.",
-              refreshPath,
-            )
+        jwtService
+          .renewAccessToken(request.refreshToken)
+          .mapError(handleCommonErrors(refreshPath))
 
       userResponse <- findAndMapUserToResponse(newAccessToken.userId, refreshPath)
 
       newRefreshToken <-
         jwtService
           .createRefreshToken(newAccessToken.userId, Instant.now())
-          .mapError { e =>
-            createErrorResponse(
-              StatusCode.InternalServerError.code,
-              "TOKEN_CREATION_ERROR",
-              s"Failed to create new refresh token: ${e.getMessage}",
-              refreshPath,
-            )
-          }
+          .mapError(handleCommonErrors(refreshPath))
     yield AuthResponse(
       accessToken = newAccessToken.token,
       refreshToken = newRefreshToken.token,

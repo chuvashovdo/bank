@@ -7,66 +7,66 @@ import jwt.models.*
 import zio.json.{ JsonDecoder, JsonEncoder }
 
 object TapirSchemas:
-  implicit val schemaEmail: Schema[Email] =
+  given schemaEmail: Schema[Email] =
     Schema(SchemaType.SString(), format = Some("email"))
-  implicit val encoderEmail: JsonEncoder[Email] =
+  given encoderEmail: JsonEncoder[Email] =
     JsonEncoder.string.contramap(_.value)
-  implicit val decoderEmail: JsonDecoder[Email] =
+  given decoderEmail: JsonDecoder[Email] =
     JsonDecoder.string.mapOrFail(str => Email(str).left.map(_.developerFriendlyMessage))
 
-  implicit val schemaPassword: Schema[Password] =
+  given schemaPassword: Schema[Password] =
     Schema(SchemaType.SString(), format = Some("password"))
-  implicit val encoderPassword: JsonEncoder[Password] =
+  given encoderPassword: JsonEncoder[Password] =
     JsonEncoder.string.contramap(_.value)
-  implicit val decoderPassword: JsonDecoder[Password] =
+  given decoderPassword: JsonDecoder[Password] =
     JsonDecoder.string.mapOrFail(str => Password(str).left.map(_.developerFriendlyMessage))
 
-  implicit val schemaFirstName: Schema[FirstName] =
+  given schemaFirstName: Schema[FirstName] =
     Schema(SchemaType.SString(), format = Some("first_name"))
-  implicit val encoderFirstName: JsonEncoder[FirstName] =
+  given encoderFirstName: JsonEncoder[FirstName] =
     JsonEncoder.string.contramap(_.value)
-  implicit val decoderFirstName: JsonDecoder[FirstName] =
+  given decoderFirstName: JsonDecoder[FirstName] =
     JsonDecoder.string.mapOrFail(str => FirstName(str).left.map(_.developerFriendlyMessage))
 
-  implicit val schemaLastName: Schema[LastName] =
+  given schemaLastName: Schema[LastName] =
     Schema(SchemaType.SString(), format = Some("last_name"))
-  implicit val encoderLastName: JsonEncoder[LastName] =
+  given encoderLastName: JsonEncoder[LastName] =
     JsonEncoder.string.contramap(_.value)
-  implicit val decoderLastName: JsonDecoder[LastName] =
+  given decoderLastName: JsonDecoder[LastName] =
     JsonDecoder.string.mapOrFail(str => LastName(str).left.map(_.developerFriendlyMessage))
 
-  implicit val schemaUserId: Schema[UserId] =
+  given schemaUserId: Schema[UserId] =
     Schema(SchemaType.SString(), format = Some("user_id"))
-  implicit val encoderUserId: JsonEncoder[UserId] =
+  given encoderUserId: JsonEncoder[UserId] =
     JsonEncoder.string.contramap(_.value)
-  implicit val decoderUserId: JsonDecoder[UserId] =
+  given decoderUserId: JsonDecoder[UserId] =
     JsonDecoder.string.mapOrFail(str => UserId(str).left.map(_.developerFriendlyMessage))
 
-  implicit val schemaJwtAccessToken: Schema[JwtAccessToken] =
+  given schemaJwtAccessToken: Schema[JwtAccessToken] =
     Schema(SchemaType.SString(), format = Some("jwt_access_token"))
-  implicit val encoderJwtAccessToken: JsonEncoder[JwtAccessToken] =
+  given encoderJwtAccessToken: JsonEncoder[JwtAccessToken] =
     JsonEncoder.string.contramap(_.value)
-  implicit val decoderJwtAccessToken: JsonDecoder[JwtAccessToken] =
+  given decoderJwtAccessToken: JsonDecoder[JwtAccessToken] =
     JsonDecoder.string.mapOrFail(str => JwtAccessToken(str).left.map(_.developerFriendlyMessage))
 
-  implicit val schemaJwtRefreshToken: Schema[JwtRefreshToken] =
+  given schemaJwtRefreshToken: Schema[JwtRefreshToken] =
     Schema(SchemaType.SString(), format = Some("jwt_refresh_token"))
-  implicit val encoderJwtRefreshToken: JsonEncoder[JwtRefreshToken] =
+  given encoderJwtRefreshToken: JsonEncoder[JwtRefreshToken] =
     JsonEncoder.string.contramap(_.value)
-  implicit val decoderJwtRefreshToken: JsonDecoder[JwtRefreshToken] =
+  given decoderJwtRefreshToken: JsonDecoder[JwtRefreshToken] =
     JsonDecoder.string.mapOrFail(str => JwtRefreshToken(str).left.map(_.developerFriendlyMessage))
 
-  implicit lazy val schemaRegisterUserRequest: Schema[RegisterUserRequest] =
+  given schemaRegisterUserRequest: Schema[RegisterUserRequest] =
     Schema.derived[RegisterUserRequest]
-  implicit lazy val schemaLoginRequest: Schema[LoginRequest] =
+  given schemaLoginRequest: Schema[LoginRequest] =
     Schema.derived[LoginRequest]
-  implicit lazy val schemaUpdateUserRequest: Schema[UpdateUserRequest] =
+  given schemaUpdateUserRequest: Schema[UpdateUserRequest] =
     Schema.derived[UpdateUserRequest]
-  implicit lazy val schemaChangePasswordRequest: Schema[ChangePasswordRequest] =
+  given schemaChangePasswordRequest: Schema[ChangePasswordRequest] =
     Schema.derived[ChangePasswordRequest]
-  implicit lazy val schemaUserResponse: Schema[UserResponse] =
+  given schemaUserResponse: Schema[UserResponse] =
     Schema.derived[UserResponse]
-  implicit lazy val schemaAuthResponse: Schema[AuthResponse] =
+  given schemaAuthResponse: Schema[AuthResponse] =
     Schema.derived[AuthResponse]
-  implicit lazy val schemaRefreshTokenRequest: Schema[RefreshTokenRequest] =
+  given schemaRefreshTokenRequest: Schema[RefreshTokenRequest] =
     Schema.derived[RefreshTokenRequest]

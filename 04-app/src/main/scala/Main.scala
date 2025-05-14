@@ -15,7 +15,6 @@ import auth.service.*
 import user.repository.*
 import user.api.*
 import user.mapper.{ UserEntityMapper, UserEntityMapperImpl }
-import user.mapper.UserResponseMapperImpl
 import java.nio.file.{ Files, Paths }
 import scala.jdk.CollectionConverters.*
 import java.net.InetSocketAddress
@@ -88,7 +87,6 @@ object Main extends ZIOAppDefault:
 
   val userApiLayer =
     ZLayer.make[UserApi](
-      UserResponseMapperImpl.layer,
       UserApi.layer,
       jwtServiceLayer,
       authServiceLayer,

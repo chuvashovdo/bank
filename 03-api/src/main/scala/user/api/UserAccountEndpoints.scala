@@ -2,7 +2,7 @@ package user.api
 
 import auth.service.AuthService
 import common.models.ErrorResponse
-import common.TapirSchemas.*
+import common.TapirSchemas.given
 import sttp.model.StatusCode
 import sttp.tapir.*
 import sttp.tapir.json.zio.*
@@ -10,7 +10,6 @@ import sttp.tapir.server.ServerEndpoint
 import user.models.*
 import user.models.{ UpdateUserRequest, ChangePasswordRequest }
 import user.service.*
-import user.mapper.UserResponseMapper
 import jwt.service.JwtService
 import zio.*
 
@@ -25,7 +24,6 @@ object UserAccountEndpoints:
 class UserAccountEndpoints(
   userService: UserService,
   authService: AuthService,
-  userResponseMapper: UserResponseMapper,
   jwtService: JwtService,
 ) extends ApiEndpoint:
   import UserAccountEndpoints.* // Импортируем пути из объекта-компаньона
@@ -89,39 +87,10 @@ class UserAccountEndpoints(
     userId: UserId,
     path: String,
   ): ZIO[Any, ErrorResponse, UserResponse] =
-    for
-      userOpt <-
-        userService
-          .findUserById(userId)
-          .mapError { e =>
-            createErrorResponse(
-              StatusCode.InternalServerError.code,
-              "USER_LOOKUP_ERROR",
-              s"Failed to lookup user by ID: ${e.getMessage}",
-              path,
-            )
-          }
-      user <-
-        ZIO
-          .fromOption(userOpt)
-          .orElseFail(
-            createErrorResponse(
-              StatusCode.NotFound.code,
-              "USER_NOT_FOUND",
-              "User not found.",
-              path,
-            )
-          )
-      userResponse <-
-        userResponseMapper.fromUser(user).mapError { e =>
-          createErrorResponse(
-            StatusCode.InternalServerError.code,
-            "RESPONSE_MAPPING_ERROR",
-            s"Failed to map user response: ${e.getMessage}",
-            path,
-          )
-        }
-    yield userResponse
+    userService
+      .findUserById(userId)
+      .mapError(handleCommonErrors(path))
+      .map(user => UserResponse(user.id, user.email, user.firstName, user.lastName))
 
   private def handleGetCurrentUser(userId: UserId): ZIO[Any, ErrorResponse, UserResponse] =
     findAndMapUserToResponse(userId, profilePath)
@@ -131,23 +100,10 @@ class UserAccountEndpoints(
     request: UpdateUserRequest,
   ): ZIO[Any, ErrorResponse, UserResponse] =
     for
-      // Сначала обновляем пользователя
-      updatedUserOpt <-
+      updatedUser <-
         userService
           .updateUser(userId, request.firstName, request.lastName)
           .mapError(handleCommonErrors(profilePath))
-      // Убедимся, что пользователь был обновлен и существует
-      _ <-
-        ZIO
-          .fromOption(updatedUserOpt)
-          .orElseFail:
-            createErrorResponse(
-              StatusCode.NotFound.code, // Или другая подходящая ошибка, если обновление не удалось по другой причине
-              "USER_UPDATE_FAILED_OR_NOT_FOUND",
-              "User not found or update failed.",
-              profilePath,
-            )
-      // Затем получаем обновленного пользователя и мапим его
       userResponse <- findAndMapUserToResponse(userId, profilePath)
     yield userResponse
 
@@ -155,56 +111,19 @@ class UserAccountEndpoints(
     userId: UserId,
     request: ChangePasswordRequest,
   ): ZIO[Any, ErrorResponse, Unit] =
-    for
-      success <-
-        userService
-          .changePassword(userId, request.oldPassword, request.newPassword)
-          .mapError(handleCommonErrors(changePasswordPath))
-
-      _ <-
-        ZIO.unless(success):
-          ZIO.fail:
-            createErrorResponse(
-              StatusCode.BadRequest.code,
-              "INVALID_OLD_PASSWORD",
-              "The old password provided is incorrect.",
-              changePasswordPath,
-            )
-    yield ()
+    userService
+      .changePassword(userId, request.oldPassword, request.newPassword)
+      .mapError(handleCommonErrors(changePasswordPath))
 
   private def handleDeactivateAccount(userId: UserId): ZIO[Any, ErrorResponse, Unit] =
     for
-      success <-
+      _ <-
         userService
           .deactivateUser(userId)
-          .mapError { e =>
-            createErrorResponse(
-              StatusCode.InternalServerError.code,
-              "DEACTIVATION_FAILED",
-              s"Failed to deactivate user: ${e.getMessage}",
-              profilePath,
-            )
-          }
-
-      _ <-
-        ZIO.unless(success):
-          ZIO.fail:
-            createErrorResponse(
-              StatusCode.BadRequest.code,
-              "DEACTIVATION_FAILED",
-              "Failed to deactivate account, user might not exist or an error occurred.",
-              profilePath,
-            )
+          .mapError(handleCommonErrors(profilePath))
 
       _ <-
         authService
           .logout(userId)
-          .mapError { e =>
-            createErrorResponse(
-              StatusCode.InternalServerError.code,
-              "LOGOUT_POST_DEACTIVATION_FAILED",
-              s"Failed to logout user after deactivation: ${e.getMessage}",
-              profilePath,
-            )
-          }
+          .mapError(handleCommonErrors(profilePath))
     yield ()

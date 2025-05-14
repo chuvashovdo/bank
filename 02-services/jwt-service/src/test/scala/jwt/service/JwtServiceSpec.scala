@@ -7,7 +7,8 @@ import user.models.UserId
 import java.time.Instant
 import jwt.models.{ RefreshToken, JwtAccessToken, JwtRefreshToken }
 import jwt.repository.TokenRepository
-
+import jwt.entity.RefreshTokenEntity
+import common.errors.RefreshTokenNotFoundError
 object JwtServiceSpec extends ZIOSpecDefault:
   // Helper functions for creating custom types
   private def unsafeUserId(id: String): UserId =
@@ -42,13 +43,13 @@ object JwtServiceSpec extends ZIOSpecDefault:
   val mockTokenRepositoryLayer =
     ZLayer.succeed:
       new TokenRepository:
-        override def saveRefreshToken(token: RefreshToken): Task[Unit] =
+        override def saveRefreshToken(token: RefreshTokenEntity): Task[Unit] =
           ZIO.unit
-        override def findByRefreshToken(token: JwtRefreshToken): Task[Option[RefreshToken]] =
-          ZIO.succeed(None)
-        override def deleteByRefreshToken(token: JwtRefreshToken): Task[Unit] =
+        override def findByRefreshToken(token: String): Task[RefreshToken] =
+          ZIO.fail(RefreshTokenNotFoundError(token))
+        override def deleteByRefreshToken(token: String): Task[Unit] =
           ZIO.unit
-        override def deleteAllByUserId(userId: UserId): Task[Unit] =
+        override def deleteAllByUserId(userId: String): Task[Unit] =
           ZIO.unit
         override def cleanExpiredTokens(): Task[Unit] =
           ZIO.unit

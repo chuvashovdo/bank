@@ -3,24 +3,18 @@ package auth.service
 import zio.*
 import user.service.UserService
 import jwt.service.JwtService
-import user.models.{ Email, Password, FirstName, LastName, User, UserId }
+import user.models.{ Email, Password, FirstName, LastName, UserId }
 import jwt.models.AccessToken
 import java.time.Instant
-
 final case class AuthServiceImpl(
   userService: UserService,
   jwtService: JwtService,
 ) extends AuthService:
-  override def login(email: Email, password: Password): Task[Option[AccessToken]] =
+  override def login(email: Email, password: Password): Task[AccessToken] =
     for
-      userOpt: Option[User] <- userService.validateCredentials(email, password)
-      tokenOpt <-
-        userOpt match
-          case Some(user) =>
-            jwtService.createAccessToken(user.id, Instant.now()).map(Some(_))
-          case None =>
-            ZIO.succeed(None)
-    yield tokenOpt
+      user <- userService.validateCredentials(email, password)
+      token <- jwtService.createAccessToken(user.id, Instant.now())
+    yield token
 
   override def register(
     email: Email,

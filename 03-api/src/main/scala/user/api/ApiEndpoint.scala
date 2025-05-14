@@ -6,12 +6,13 @@ import common.models.{ ErrorDetail, ErrorResponse }
 import jwt.models.JwtAccessToken
 import jwt.service.JwtService
 import sttp.model.StatusCode
-import sttp.tapir.*
+import sttp.tapir.{ Endpoint, auth, endpoint, * }
 import sttp.tapir.json.zio.*
 import sttp.tapir.server.PartialServerEndpoint
 import sttp.tapir.generic.auto.*
 import user.models.UserId
 import zio.*
+import common.errors.ValidationError
 
 import java.time.Instant
 import scala.util.control.NonFatal
@@ -81,11 +82,37 @@ trait ApiEndpoint:
   protected def handleCommonErrors(path: String)(error: Throwable): ErrorResponse =
     error match
       case e: UserAlreadyExistsError =>
-        createErrorResponse(StatusCode.Conflict.code, e.errorCode, e.message, path)
+        ErrorResponse.fromBusinessError(StatusCode.Conflict.code, path, e)
       case e: InvalidOldPasswordError =>
-        createErrorResponse(StatusCode.BadRequest.code, e.errorCode, e.message, path)
+        ErrorResponse.fromBusinessError(StatusCode.BadRequest.code, path, e)
+      case e: InvalidCredentialsError =>
+        ErrorResponse.fromBusinessError(StatusCode.Unauthorized.code, path, e)
+      case e: UserNotFoundError =>
+        ErrorResponse.fromBusinessError(StatusCode.NotFound.code, path, e)
+      case e: RefreshTokenNotFoundError =>
+        ErrorResponse.fromBusinessError(StatusCode.NotFound.code, path, e)
+      case e: TokenMissingClaimError =>
+        ErrorResponse.fromBusinessError(StatusCode.Unauthorized.code, path, e)
+      case e: TokenExpiredError =>
+        ErrorResponse.fromBusinessError(StatusCode.Unauthorized.code, path, e)
+      case e: InvalidTokenSubjectFormatError =>
+        ErrorResponse.fromBusinessError(StatusCode.Unauthorized.code, path, e)
+      case e: TokenDecodingError =>
+        ErrorResponse.fromBusinessError(StatusCode.Unauthorized.code, path, e)
+      case e: UserNotActiveError =>
+        ErrorResponse.fromBusinessError(StatusCode.Forbidden.code, path, e)
+      case e: CorruptedDataInDBError =>
+        ErrorResponse.fromBusinessError(StatusCode.InternalServerError.code, path, e)
       case e: BusinessError =>
-        createErrorResponse(StatusCode.BadRequest.code, e.errorCode, e.message, path)
+        ErrorResponse.fromBusinessError(StatusCode.BadRequest.code, path, e)
+      case e: ValidationError =>
+        ErrorResponse.fromValidationErrors(
+          StatusCode.BadRequest.code,
+          "VALIDATION_ERROR",
+          path,
+          "Validation error occurred",
+          List(e),
+        )
       case NonFatal(e) =>
         createErrorResponse(
           StatusCode.InternalServerError.code,
@@ -93,17 +120,3 @@ trait ApiEndpoint:
           e.getMessage,
           path,
         )
-
-  protected def handleValidationErrors(
-    path: String,
-    message: String = "Validation failed",
-  )(
-    errors: Seq[common.errors.ValidationError]
-  ): ErrorResponse =
-    ErrorResponse.fromValidationErrors(
-      StatusCode.BadRequest.code,
-      "VALIDATION_ERROR",
-      path,
-      message,
-      errors.toList,
-    )

@@ -140,33 +140,31 @@ object UserRepositorySpec extends ZIOSpecDefault:
       test("findById should return None for non-existent user") {
         for
           repo <- ZIO.service[UserRepository]
-          user <- repo.findById(unsafeUserId("non-existent"))
-        yield assertTrue(user.isEmpty)
+          user <- repo.findById("non-existent").exit
+        yield assertTrue(user.isFailure)
       },
       test("create and findById should work correctly") {
         for
           repo <- ZIO.service[UserRepository]
           createdUser <-
             repo.create("test@example.com", "hashedPassword", Some("Test"), Some("User"))
-          foundUserOpt <- repo.findById(createdUser.id)
+          foundUser <- repo.findById(createdUser.id.value)
         yield assertTrue {
-          foundUserOpt.isDefined &&
-          foundUserOpt.get.id.equals(createdUser.id) &&
-          foundUserOpt.get.email.value == "test@example.com" &&
-          foundUserOpt.get.firstName.map(_.value) == Some("Test") &&
-          foundUserOpt.get.lastName.map(_.value) == Some("User")
+          foundUser.id.equals(createdUser.id) &&
+          foundUser.email.value == "test@example.com" &&
+          foundUser.firstName.map(_.value) == Some("Test") &&
+          foundUser.lastName.map(_.value) == Some("User")
         }
       },
       test("findByEmail should return user by email") {
         for
           repo <- ZIO.service[UserRepository]
           _ <- repo.create("email_test@example.com", "password", Some("Email"), Some("Test"))
-          userOpt <- repo.findByEmail("email_test@example.com")
+          user <- repo.findByEmail("email_test@example.com")
         yield assertTrue {
-          userOpt.isDefined &&
-          userOpt.get.email.value == "email_test@example.com" &&
-          userOpt.get.firstName.map(_.value) == Some("Email") &&
-          userOpt.get.lastName.map(_.value) == Some("Test")
+          user.email.value == "email_test@example.com" &&
+          user.firstName.map(_.value) == Some("Email") &&
+          user.lastName.map(_.value) == Some("Test")
         }
       },
       test("update should modify user properties") {
@@ -174,15 +172,13 @@ object UserRepositorySpec extends ZIOSpecDefault:
           repo <- ZIO.service[UserRepository]
           createdUser <-
             repo.create("update@example.com", "password", Some("Before"), Some("Update"))
-          updatedUserOpt <- repo.update(createdUser.id, Some("After"), Some("Updated"))
-          retrievedUser <- repo.findById(createdUser.id)
+          updatedUser <- repo.update(createdUser.id.value, Some("After"), Some("Updated"))
+          retrievedUser <- repo.findById(createdUser.id.value)
         yield assertTrue {
-          updatedUserOpt.isDefined &&
-          updatedUserOpt.get.firstName.map(_.value) == Some("After") &&
-          updatedUserOpt.get.lastName.map(_.value) == Some("Updated") &&
-          retrievedUser.isDefined &&
-          retrievedUser.get.firstName.map(_.value) == Some("After") &&
-          retrievedUser.get.lastName.map(_.value) == Some("Updated")
+          updatedUser.firstName.map(_.value) == Some("After") &&
+          updatedUser.lastName.map(_.value) == Some("Updated") &&
+          retrievedUser.firstName.map(_.value) == Some("After") &&
+          retrievedUser.lastName.map(_.value) == Some("Updated")
         }
       },
       test("updatePassword should change password") {
@@ -190,38 +186,34 @@ object UserRepositorySpec extends ZIOSpecDefault:
           repo <- ZIO.service[UserRepository]
           createdUser <-
             repo.create("password@example.com", "oldPassword", Some("Password"), Some("Test"))
-          result <- repo.updatePassword(createdUser.id, "newPassword")
-          updatedUser <- repo.findById(createdUser.id)
-        yield assertTrue(
-          result &&
-          updatedUser.isDefined &&
-          updatedUser.get.passwordHash == "newPassword"
-        )
+          result <- repo.updatePassword(createdUser.id.value, "newPassword")
+          updatedUser <- repo.findById(createdUser.id.value)
+        yield assertTrue {
+          updatedUser.passwordHash == "newPassword"
+        }
       },
       test("deactivate should set isActive to false") {
         for
           repo <- ZIO.service[UserRepository]
           createdUser <-
             repo.create("deactivate@example.com", "password", Some("Deactivate"), Some("Test"))
-          result <- repo.deactivate(createdUser.id)
-          updatedUser <- repo.findById(createdUser.id)
-        yield assertTrue(
-          result &&
-          updatedUser.isDefined &&
-          !updatedUser.get.isActive
-        )
+          result <- repo.deactivate(createdUser.id.value)
+          updatedUser <- repo.findById(createdUser.id.value)
+        yield assertTrue {
+          !updatedUser.isActive
+        }
       },
       test("operations should return appropriate results for non-existent users") {
         for
           repo <- ZIO.service[UserRepository]
           nonExistentId = unsafeUserId("does-not-exist")
-          updateResult <- repo.update(nonExistentId, Some("First"), Some("Last"))
-          passwordResult <- repo.updatePassword(nonExistentId, "newPassword")
-          deactivateResult <- repo.deactivate(nonExistentId)
-        yield assertTrue(
-          updateResult.isEmpty &&
-          !passwordResult &&
-          !deactivateResult
-        )
+          updateResult <- repo.update(nonExistentId.value, Some("First"), Some("Last")).exit
+          passwordResult <- repo.updatePassword(nonExistentId.value, "newPassword").exit
+          deactivateResult <- repo.deactivate(nonExistentId.value).exit
+        yield assertTrue {
+          updateResult.isFailure &&
+          passwordResult.isFailure &&
+          deactivateResult.isFailure
+        }
       },
     ).provide(testEnvLayer)
