@@ -112,9 +112,11 @@ lazy val root =
     .in(file("."))
     .aggregate(
       abstractions,
+      commonService,
       authService,
       userService,
       jwtService,
+      bankService,
       httpApi,
       app,
     )
@@ -141,6 +143,15 @@ lazy val serviceCommonSettings =
       libraryDependencies ++= databaseDependencies.filterNot(_.name == "flyway-core"),
       libraryDependencies ++= commonTestDependencies,
       libraryDependencies ++= h2TestDependency,
+    )
+
+lazy val commonService =
+  project
+    .in(file("02-services/common-service"))
+    .dependsOn(abstractions)
+    .settings(
+      serviceCommonSettings,
+      libraryDependencies += "org.flywaydb" % "flyway-core" % versions.flyway,
     )
 
 lazy val authService =
@@ -173,6 +184,14 @@ lazy val jwtService =
       ),
     )
 
+lazy val bankService =
+  project
+    .in(file("02-services/bank-service"))
+    .dependsOn(abstractions)
+    .settings(
+      serviceCommonSettings
+    )
+
 lazy val httpApi =
   project
     .in(file("03-api"))
@@ -181,6 +200,7 @@ lazy val httpApi =
       authService,
       userService,
       jwtService,
+      bankService,
     )
     .settings(
       commonSettings,
@@ -198,8 +218,8 @@ lazy val app =
     .in(file("04-app"))
     .enablePlugins(JavaAppPackaging)
     .dependsOn(
-      abstractions,
       httpApi,
+      commonService,
     )
     .settings(
       commonSettings,
@@ -208,7 +228,6 @@ lazy val app =
       libraryDependencies ++= commonDependencies,
       libraryDependencies += "com.softwaremill.sttp.tapir" %% "tapir-zio-http-server" % versions.tapir,
       libraryDependencies += "dev.zio" %% "zio-http" % versions.zioHttp,
-      libraryDependencies += "org.flywaydb" % "flyway-core" % versions.flyway,
       libraryDependencies ++= commonTestDependencies,
     )
 

@@ -1,7 +1,7 @@
-package user.api
+package common.api
 
-// import auth.service.AuthService
 import common.errors.*
+import auth.errors.*
 import common.models.{ ErrorDetail, ErrorResponse }
 import jwt.models.JwtAccessToken
 import jwt.service.JwtService
@@ -13,6 +13,9 @@ import sttp.tapir.generic.auto.*
 import user.models.UserId
 import zio.*
 import common.errors.ValidationError
+import user.errors.*
+import jwt.errors.*
+import bank.errors.*
 
 import java.time.Instant
 import scala.util.control.NonFatal
@@ -81,6 +84,7 @@ trait ApiEndpoint:
 
   protected def handleCommonErrors(path: String)(error: Throwable): ErrorResponse =
     error match
+      // User and Auth Errors
       case e: UserAlreadyExistsError =>
         ErrorResponse.fromBusinessError(StatusCode.Conflict.code, path, e)
       case e: InvalidOldPasswordError =>
@@ -91,6 +95,10 @@ trait ApiEndpoint:
         ErrorResponse.fromBusinessError(StatusCode.NotFound.code, path, e)
       case e: RefreshTokenNotFoundError =>
         ErrorResponse.fromBusinessError(StatusCode.NotFound.code, path, e)
+      case e: UserNotActiveError =>
+        ErrorResponse.fromBusinessError(StatusCode.Forbidden.code, path, e)
+
+      // JWT Errors
       case e: TokenMissingClaimError =>
         ErrorResponse.fromBusinessError(StatusCode.Unauthorized.code, path, e)
       case e: TokenExpiredError =>
@@ -99,8 +107,20 @@ trait ApiEndpoint:
         ErrorResponse.fromBusinessError(StatusCode.Unauthorized.code, path, e)
       case e: TokenDecodingError =>
         ErrorResponse.fromBusinessError(StatusCode.Unauthorized.code, path, e)
-      case e: UserNotActiveError =>
+
+      // Bank Errors
+      case e: AccountNotFoundError =>
+        ErrorResponse.fromBusinessError(StatusCode.NotFound.code, path, e)
+      case e: AccountClosedError =>
+        ErrorResponse.fromBusinessError(StatusCode.BadRequest.code, path, e)
+      case e: UnauthorizedAccountAccessError =>
         ErrorResponse.fromBusinessError(StatusCode.Forbidden.code, path, e)
+      case e: InsufficientFundsError =>
+        ErrorResponse.fromBusinessError(StatusCode.BadRequest.code, path, e)
+      case e: CurrencyMismatchError =>
+        ErrorResponse.fromBusinessError(StatusCode.BadRequest.code, path, e)
+
+      // Generic Errors
       case e: CorruptedDataInDBError =>
         ErrorResponse.fromBusinessError(StatusCode.InternalServerError.code, path, e)
       case e: BusinessError =>

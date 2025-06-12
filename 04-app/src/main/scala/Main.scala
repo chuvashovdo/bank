@@ -8,13 +8,17 @@ import scala.language.unsafeNulls
 import jwt.config.{ JwtConfig, JwtConfigImpl }
 import jwt.service.{ JwtService, JwtServiceImpl }
 import user.service.{ UserService, UserServiceImpl }
-import auth.config.{ DbConfig, DbConfigImpl }
-import auth.config.QuillContext
+import common.db.{ DbConfig, DbConfigImpl, QuillContext }
 import jwt.repository.{ TokenRepository, TokenRepositoryImpl }
 import auth.service.*
 import user.repository.*
 import user.api.*
-import user.mapper.{ UserEntityMapper, UserEntityMapperImpl }
+import bank.service.*
+import bank.repository.*
+import bank.api.*
+import common.service.*
+import sttp.tapir.server.ziohttp.ZioHttpInterpreter
+import sttp.tapir.swagger.bundle.SwaggerInterpreter
 import java.nio.file.{ Files, Paths }
 import scala.jdk.CollectionConverters.*
 import java.net.InetSocketAddress
@@ -71,7 +75,6 @@ object Main extends ZIOAppDefault:
 
   val userServiceLayer =
     ZLayer.make[UserService](
-      UserEntityMapperImpl.layer,
       UserServiceImpl.layer,
       UserRepositoryImpl.layer,
       DbConfigImpl.layer,
@@ -83,6 +86,33 @@ object Main extends ZIOAppDefault:
       AuthServiceImpl.layer,
       jwtServiceLayer,
       userServiceLayer,
+    )
+
+  val accountServiceLayer =
+    ZLayer.make[AccountService](
+      AccountServiceImpl.layer,
+      AccountRepositoryImpl.layer,
+      AccountNumberGeneratorImpl.layer,
+      DbConfigImpl.layer,
+      QuillContext.dataSourceLayer,
+    )
+
+  val transactionServiceLayer =
+    ZLayer.make[TransactionService](
+      TransactionServiceImpl.layer,
+      TransactionRepositoryImpl.layer,
+      AccountRepositoryImpl.layer,
+      TransactorImpl.layer,
+      DbConfigImpl.layer,
+      QuillContext.dataSourceLayer,
+    )
+
+  val bankApiLayer =
+    ZLayer.make[BankApi](
+      BankApi.layer,
+      accountServiceLayer,
+      transactionServiceLayer,
+      jwtServiceLayer,
     )
 
   val userApiLayer =
@@ -99,12 +129,22 @@ object Main extends ZIOAppDefault:
       _ <- migrateDb
       _ <- Console.printLine("Database migration complete")
       userApi <- ZIO.service[UserApi]
+      bankApi <- ZIO.service[BankApi]
+      apiEndpoints = userApi.apiEndpoints ++ bankApi.allEndpoints
+      swaggerEndpoints =
+        SwaggerInterpreter()
+          .fromServerEndpoints[Task](
+            apiEndpoints,
+            "Bank API",
+            "1.0.0",
+          )
+      allRoutes = ZioHttpInterpreter().toHttp(apiEndpoints ++ swaggerEndpoints)
       _ <- Console.printLine(s"API docs available at: http://localhost:$serverPort/docs")
       config =
         Server.Config.default.port(serverPort).binding(InetSocketAddress(serverHost, serverPort))
       server <-
         Server
-          .serve(userApi.routes)
+          .serve(allRoutes)
           .provide(
             ZLayer.succeed(config),
             Server.live,
@@ -116,5 +156,6 @@ object Main extends ZIOAppDefault:
   override def run =
     program.provide(
       userApiLayer,
+      bankApiLayer,
       DbConfigImpl.layer,
     )
