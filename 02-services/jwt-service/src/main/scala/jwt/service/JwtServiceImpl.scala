@@ -5,7 +5,7 @@ import jwt.config.JwtConfig
 import jwt.models.{ AccessToken, JwtAccessToken, JwtRefreshToken }
 import user.models.UserId
 import java.time.Instant
-import pdi.jwt.{ JwtAlgorithm, JwtClaim, JwtZIOJson }
+import pdi.jwt.{ JwtAlgorithm, JwtClaim, JwtZIOJson, JwtOptions }
 import jwt.models.RefreshToken
 import jwt.repository.TokenRepository
 import jwt.entity.RefreshTokenEntity
@@ -23,15 +23,11 @@ class JwtServiceImpl(jwtConfig: JwtConfig, tokenRepository: TokenRepository) ext
     issuedAt: Instant = Instant.now(),
   ): Task[AccessToken] =
     for
-      expirationMillis <- jwtConfig.accessTokenExpirationMillis
-      issuer <- jwtConfig.issuer
-      audience <- jwtConfig.audience
-      secretKey <- jwtConfig.secretKey
-      expiresAt = issuedAt.plusMillis(expirationMillis)
+      expiresAt <- ZIO.succeed(issuedAt.plusMillis(jwtConfig.accessTokenExpiration.toMillis))
       claim =
         JwtClaim(
-          issuer = Some(issuer),
-          audience = Some(Set(audience)),
+          issuer = Some(jwtConfig.issuer),
+          audience = Some(Set(jwtConfig.audience)),
           subject = Some(userId.value.toString),
           expiration = Some(expiresAt.toEpochMilli),
           issuedAt = Some(issuedAt.toEpochMilli),
@@ -40,7 +36,7 @@ class JwtServiceImpl(jwtConfig: JwtConfig, tokenRepository: TokenRepository) ext
         ZIO.attempt(
           JwtZIOJson.encode(
             claim,
-            secretKey,
+            jwtConfig.secretKey,
             JwtAlgorithm.HS256,
           )
         )
@@ -59,15 +55,11 @@ class JwtServiceImpl(jwtConfig: JwtConfig, tokenRepository: TokenRepository) ext
     issuedAt: Instant = Instant.now(),
   ): Task[RefreshToken] =
     for
-      expirationMillis <- jwtConfig.refreshTokenExpirationMillis
-      issuer <- jwtConfig.issuer
-      audience <- jwtConfig.audience
-      secretKey <- jwtConfig.secretKey
-      expiresAt = issuedAt.plusMillis(expirationMillis)
+      expiresAt <- ZIO.succeed(issuedAt.plusMillis(jwtConfig.refreshTokenExpiration.toMillis))
       claim =
         JwtClaim(
-          issuer = Some(issuer),
-          audience = Some(Set(audience)),
+          issuer = Some(jwtConfig.issuer),
+          audience = Some(Set(jwtConfig.audience)),
           subject = Some(userId.value.toString),
           expiration = Some(expiresAt.toEpochMilli),
           issuedAt = Some(issuedAt.toEpochMilli),
@@ -76,7 +68,7 @@ class JwtServiceImpl(jwtConfig: JwtConfig, tokenRepository: TokenRepository) ext
         ZIO.attempt(
           JwtZIOJson.encode(
             claim,
-            secretKey,
+            jwtConfig.secretKey,
             JwtAlgorithm.HS256,
           )
         )
@@ -107,10 +99,16 @@ class JwtServiceImpl(jwtConfig: JwtConfig, tokenRepository: TokenRepository) ext
 
   override def validateToken(token: JwtAccessToken): Task[UserId] =
     for
-      secretKey <- jwtConfig.secretKey
       claim <-
         ZIO
-          .fromTry(JwtZIOJson.decode(token.value, secretKey, Seq(JwtAlgorithm.HS256)))
+          .fromTry(
+            JwtZIOJson.decode(
+              token.value,
+              jwtConfig.secretKey,
+              Seq(JwtAlgorithm.HS256),
+              JwtOptions(expiration = false),
+            )
+          )
           .mapError(err => TokenDecodingError(details = Some(err.getMessage)))
       now = Instant.now().getEpochSecond
       expiration <-
