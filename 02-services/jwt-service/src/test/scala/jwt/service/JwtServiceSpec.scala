@@ -8,11 +8,13 @@ import java.time.Instant
 import jwt.models.{ RefreshToken, JwtAccessToken, JwtRefreshToken }
 import jwt.repository.TokenRepository
 import jwt.entity.RefreshTokenEntity
-import common.errors.RefreshTokenNotFoundError
+import auth.errors.RefreshTokenNotFoundError
+import java.util.UUID
+
 object JwtServiceSpec extends ZIOSpecDefault:
   // Helper functions for creating custom types
-  private def unsafeUserId(id: String): UserId =
-    UserId(id).getOrElse(throw new RuntimeException(s"Invalid UserId in test setup: $id"))
+  private def unsafeUserId(): UserId =
+    UserId(UUID.randomUUID())
 
   private def unsafeJwtAccessToken(token: String): JwtAccessToken =
     JwtAccessToken(token).getOrElse(
@@ -49,7 +51,7 @@ object JwtServiceSpec extends ZIOSpecDefault:
           ZIO.fail(RefreshTokenNotFoundError(token))
         override def deleteByRefreshToken(token: String): Task[Unit] =
           ZIO.unit
-        override def deleteAllByUserId(userId: String): Task[Unit] =
+        override def deleteAllByUserId(userId: UUID): Task[Unit] =
           ZIO.unit
         override def cleanExpiredTokens(): Task[Unit] =
           ZIO.unit
@@ -66,40 +68,40 @@ object JwtServiceSpec extends ZIOSpecDefault:
       test("createAccessToken creates valid token") {
         for
           jwtService <- ZIO.service[JwtService]
-          userId = unsafeUserId("test-user-id")
+          userId = unsafeUserId()
           issuedAt = Instant.now()
           accessToken <- jwtService.createAccessToken(userId, issuedAt)
         yield assertTrue(
           accessToken.token.value.nonEmpty,
-          accessToken.userId.value == userId.value,
+          accessToken.userId == userId,
           accessToken.expiresAt.isAfter(issuedAt),
         )
       }.provide(testJwtServiceLayer),
       test("createRefreshToken creates valid token") {
         for
           jwtService <- ZIO.service[JwtService]
-          userId = unsafeUserId("test-user-id")
+          userId = unsafeUserId()
           issuedAt = Instant.now()
           refreshToken <- jwtService.createRefreshToken(userId, issuedAt)
         yield assertTrue(
           refreshToken.token.value.nonEmpty,
-          refreshToken.userId.value == userId.value,
+          refreshToken.userId == userId,
           refreshToken.expiresAt.isAfter(issuedAt),
         )
       }.provide(testJwtServiceLayer),
       test("validateToken validates a correct token") {
         for
           jwtService <- ZIO.service[JwtService]
-          userId = unsafeUserId("test-user-id")
+          userId = unsafeUserId()
           accessToken <- jwtService.createAccessToken(userId, Instant.now())
           validatedUserId <- jwtService.validateToken(accessToken.token)
-        yield assertTrue(validatedUserId.value == userId.value)
+        yield assertTrue(validatedUserId == userId)
       }.provide(testJwtServiceLayer),
       test("validateToken fails for expired token") {
         for
           jwtService <- ZIO.service[JwtService]
           config <- ZIO.service[MockJwtConfig]
-          userId = unsafeUserId("test-user-id")
+          userId = unsafeUserId()
           now = Instant.now()
           expiredTime = now.minusSeconds(3600)
           secretKey <- config.secretKey
@@ -111,7 +113,7 @@ object JwtServiceSpec extends ZIOSpecDefault:
               .JwtClaim(
                 issuer = Some(issuer),
                 audience = Some(Set(audience)),
-                subject = Some(userId.value),
+                subject = Some(userId.value.toString),
                 expiration = Some(expiredTime.toEpochMilli / 1000),
                 issuedAt = Some(expiredTime.minusSeconds(3600).toEpochMilli / 1000),
               )

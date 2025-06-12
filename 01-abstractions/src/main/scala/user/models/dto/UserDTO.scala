@@ -1,5 +1,6 @@
-package user.models
+package user.models.dto
 
+import user.models.*
 import jwt.models.{ JwtAccessToken, JwtRefreshToken }
 import zio.json.*
 

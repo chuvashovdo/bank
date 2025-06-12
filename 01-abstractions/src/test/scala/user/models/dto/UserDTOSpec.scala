@@ -1,9 +1,10 @@
-package user.models
+package user.models.dto
 
 import zio.*
 import zio.test.*
 import zio.json.*
 import common.errors.{ InvalidDataFormatError, ValueCannotBeEmptyError }
+import user.models.*
 
 object UserDTOSpec extends ZIOSpecDefault:
   // Генераторы данных
@@ -39,7 +40,7 @@ object UserDTOSpec extends ZIOSpecDefault:
     Gen.option(lastNameGen)
 
   val userIdGen: Gen[Any, UserId] =
-    Gen.alphaNumericStringBounded(5, 10).map(UserId.apply).collect { case Right(userId) => userId }
+    Gen.const(UserId.random)
 
   // Генератор для RegisterUserRequest
   val registerUserRequestGen: Gen[Any, RegisterUserRequest] =

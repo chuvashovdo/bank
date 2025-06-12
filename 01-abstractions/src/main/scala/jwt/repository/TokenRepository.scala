@@ -3,12 +3,13 @@ package jwt.repository
 import jwt.entity.RefreshTokenEntity
 import jwt.models.RefreshToken
 import zio.*
+import java.util.UUID
 
 trait TokenRepository:
   def saveRefreshToken(tokenEntity: RefreshTokenEntity): Task[Unit]
   def findByRefreshToken(token: String): Task[RefreshToken]
   def deleteByRefreshToken(token: String): Task[Unit]
-  def deleteAllByUserId(userId: String): Task[Unit]
+  def deleteAllByUserId(userId: UUID): Task[Unit]
   def cleanExpiredTokens(): Task[Unit]
 
 object TokenRepository:
@@ -21,7 +22,7 @@ object TokenRepository:
   def deleteByRefreshToken(token: String): RIO[TokenRepository, Unit] =
     ZIO.serviceWithZIO[TokenRepository](_.deleteByRefreshToken(token))
 
-  def deleteAllByUserId(userId: String): RIO[TokenRepository, Unit] =
+  def deleteAllByUserId(userId: UUID): RIO[TokenRepository, Unit] =
     ZIO.serviceWithZIO[TokenRepository](_.deleteAllByUserId(userId))
 
   def cleanExpiredTokens(): RIO[TokenRepository, Unit] =
