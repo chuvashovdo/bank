@@ -1,120 +1,119 @@
 package bank
 
 import zio.*
-import org.flywaydb.core.Flyway
-import io.getquill.*
 import zio.http.*
-import scala.language.unsafeNulls
-import jwt.config.{ JwtConfig, JwtConfigImpl }
+import org.flywaydb.core.Flyway
+import sttp.tapir.server.ziohttp.ZioHttpInterpreter
+import sttp.tapir.swagger.bundle.SwaggerInterpreter
+import common.config.db.{ DbConfig, DbConfigImpl, QuillContext }
+import common.service.TransactorImpl
+import jwt.config.JwtConfigImpl
+import jwt.repository.TokenRepositoryImpl
 import jwt.service.{ JwtService, JwtServiceImpl }
-import user.service.{ UserService, UserServiceImpl }
-import auth.config.{ DbConfig, DbConfigImpl }
-import auth.config.QuillContext
-import jwt.repository.{ TokenRepository, TokenRepositoryImpl }
-import auth.service.*
-import user.repository.*
-import user.api.*
-import user.mapper.{ UserEntityMapper, UserEntityMapperImpl }
-import java.nio.file.{ Files, Paths }
-import scala.jdk.CollectionConverters.*
+import user.repository.UserRepositoryImpl
+import user.service.UserServiceImpl
+import auth.service.AuthServiceImpl
+import bank.repository.{ AccountRepositoryImpl, TransactionRepositoryImpl }
+import bank.service.*
+import user.api.UserApi
+import bank.api.BankApi
 import java.net.InetSocketAddress
 
 object Main extends ZIOAppDefault:
-  // Загрузка переменных окружения из .env файла
-  private def loadEnv(): Unit =
-    val envPath = Paths.get(".env")
-    if Files.exists(envPath) then
-      val lines = Files.readAllLines(envPath).asScala
 
-      for line <- lines do
-        if !line.startsWith("#") && line.contains("=") then
-          val parts = line.split("=", 2)
-          if parts.length == 2 then
-            val key = parts(0).trim
-            val value = parts(1).trim
-            val _ = java.lang.System.setProperty(key, value)
-
-  loadEnv()
-
-  val serverPort =
-    8080
-  val serverHost =
-    "0.0.0.0" // Слушаем на всех интерфейсах
-
-  val migrateDb: ZIO[DbConfig, Throwable, Unit] =
-    ZIO.service[DbConfig].flatMap { config =>
-      ZIO.attempt:
-        val flyway =
-          Flyway
-            .configure()
-            .dataSource(config.url, config.user, config.password)
-            .load()
-        val _ = flyway.migrate()
-    }
-
-  val jwtConfigLayer =
+  // --- CONFIG LAYERS ---
+  private val dbConfigLayer =
+    DbConfigImpl.layer
+  private val jwtConfigLayer =
     JwtConfigImpl.layer
 
-  val tokenRepositoryLayer =
-    ZLayer.make[TokenRepository](
-      TokenRepositoryImpl.layer,
-      DbConfigImpl.layer,
-      QuillContext.dataSourceLayer,
-    )
+  // --- INFRASTRUCTURE LAYERS ---
+  private val quillLayer =
+    dbConfigLayer >>> QuillContext.layer
 
-  val jwtServiceLayer =
-    ZLayer.make[JwtService](
-      JwtServiceImpl.layer,
-      tokenRepositoryLayer,
-      jwtConfigLayer,
-    )
+  private def migrateDb(config: DbConfig): Task[Unit] =
+    ZIO.attempt:
+      val flyway =
+        Flyway
+          .configure()
+          .dataSource(
+            s"jdbc:postgresql://${config.host}:${config.port}/${config.database}",
+            config.user,
+            config.password,
+          )
+          .load()
+      val _ = flyway.migrate()
 
-  val userServiceLayer =
-    ZLayer.make[UserService](
-      UserEntityMapperImpl.layer,
-      UserServiceImpl.layer,
-      UserRepositoryImpl.layer,
-      DbConfigImpl.layer,
-      QuillContext.dataSourceLayer,
-    )
+  // --- REPOSITORY LAYERS ---
+  private val userRepoLayer =
+    quillLayer >>> UserRepositoryImpl.layer
+  private val tokenRepoLayer =
+    quillLayer >>> TokenRepositoryImpl.layer
+  private val accountRepoLayer =
+    quillLayer >>> AccountRepositoryImpl.layer
+  private val transactionRepoLayer =
+    quillLayer >>> TransactionRepositoryImpl.layer
 
-  val authServiceLayer =
-    ZLayer.make[AuthService](
-      AuthServiceImpl.layer,
-      jwtServiceLayer,
-      userServiceLayer,
-    )
+  // --- SERVICE LAYERS ---
+  private val accountNumberGeneratorLayer =
+    AccountNumberGeneratorImpl.layer
+  private val transactorLayer =
+    quillLayer >>> TransactorImpl.layer
 
-  val userApiLayer =
-    ZLayer.make[UserApi](
-      UserApi.layer,
-      jwtServiceLayer,
-      authServiceLayer,
-      userServiceLayer,
-    )
+  private val jwtServiceLayer =
+    (jwtConfigLayer ++ tokenRepoLayer) >>> JwtServiceImpl.layer
+  private val userServiceLayer =
+    userRepoLayer >>> UserServiceImpl.layer
+  private val authServiceLayer =
+    (userServiceLayer ++ jwtServiceLayer) >>> AuthServiceImpl.layer
+  private val accountServiceLayer =
+    (accountRepoLayer ++ accountNumberGeneratorLayer) >>> AccountServiceImpl.layer
+  private val transactionServiceLayer =
+    (transactionRepoLayer ++ accountRepoLayer ++ transactorLayer) >>> TransactionServiceImpl.layer
 
-  val program =
+  // --- API LAYERS ---
+  private val userApiLayer =
+    (authServiceLayer ++ userServiceLayer ++ jwtServiceLayer) >>> UserApi.layer
+  private val bankApiLayer =
+    (accountServiceLayer ++ transactionServiceLayer ++ jwtServiceLayer) >>> BankApi.layer
+
+  // --- APPLICATION ---
+  private val httpApp =
+    for
+      userApi <- ZIO.service[UserApi]
+      bankApi <- ZIO.service[BankApi]
+      apiEndpoints = userApi.apiEndpoints ++ bankApi.allEndpoints
+      swaggerEndpoints =
+        SwaggerInterpreter()
+          .fromServerEndpoints[Task](
+            apiEndpoints,
+            "Bank API",
+            "1.0.0",
+          )
+    yield ZioHttpInterpreter().toHttp(apiEndpoints ++ swaggerEndpoints)
+
+  private val program =
     for
       _ <- Console.printLine("Starting Bank API...")
-      _ <- migrateDb
+      config <- ZIO.service[DbConfig]
+      _ <- migrateDb(config).orDie
       _ <- Console.printLine("Database migration complete")
-      userApi <- ZIO.service[UserApi]
+
+      serverPort = 8080
+      serverHost = "0.0.0.0"
+
       _ <- Console.printLine(s"API docs available at: http://localhost:$serverPort/docs")
-      config =
-        Server.Config.default.port(serverPort).binding(InetSocketAddress(serverHost, serverPort))
-      server <-
-        Server
-          .serve(userApi.routes)
-          .provide(
-            ZLayer.succeed(config),
-            Server.live,
-          )
-          .fork
-      _ <- ZIO.never
+
+      routes <- httpApp
+      serverConfig = Server.Config.default.binding(InetSocketAddress(serverHost, serverPort))
+
+      _ <- Server.serve(routes).provide(ZLayer.succeed(serverConfig), Server.live)
     yield ()
 
-  override def run =
-    program.provide(
-      userApiLayer,
-      DbConfigImpl.layer,
-    )
+  private val appLayer =
+    userApiLayer ++
+      bankApiLayer ++
+      dbConfigLayer
+
+  override def run: ZIO[Any, Any, Any] =
+    program.provide(appLayer)

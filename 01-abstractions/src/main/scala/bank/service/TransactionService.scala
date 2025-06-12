@@ -1,0 +1,118 @@
+package bank.service
+
+import zio.*
+import java.util.UUID
+import scala.math.BigDecimal
+import bank.models.Transaction
+import user.models.UserId
+import java.time.Instant
+
+trait TransactionService:
+  def performTransfer(
+    sourceAccountId: UUID,
+    destinationAccountId: UUID,
+    amount: BigDecimal,
+    memo: Option[String],
+    userId: UserId,
+  ): Task[Transaction]
+
+  def performTransferByAccountNumber(
+    sourceAccountId: UUID,
+    destinationAccountNumber: String,
+    amount: BigDecimal,
+    memo: Option[String],
+    userId: UserId,
+  ): Task[Transaction]
+
+  def deposit(
+    accountId: UUID,
+    amount: BigDecimal,
+    memo: Option[String],
+    userId: UserId,
+  ): Task[Transaction]
+
+  def withdraw(
+    accountId: UUID,
+    amount: BigDecimal,
+    memo: Option[String],
+    userId: UserId,
+  ): Task[Transaction]
+
+  def getAccountTransactions(
+    accountId: UUID,
+    userId: UserId,
+    limit: Int,
+    offset: Int,
+    minAmount: Option[BigDecimal],
+    maxAmount: Option[BigDecimal],
+    startDate: Option[Instant],
+    endDate: Option[Instant],
+  ): Task[List[Transaction]]
+
+object TransactionService:
+  def performTransfer(
+    sourceAccountId: UUID,
+    destinationAccountId: UUID,
+    amount: BigDecimal,
+    memo: Option[String],
+    userId: UserId,
+  ): RIO[TransactionService, Transaction] =
+    ZIO.serviceWithZIO[TransactionService](
+      _.performTransfer(sourceAccountId, destinationAccountId, amount, memo, userId)
+    )
+
+  def performTransferByAccountNumber(
+    sourceAccountId: UUID,
+    destinationAccountNumber: String,
+    amount: BigDecimal,
+    memo: Option[String],
+    userId: UserId,
+  ): RIO[TransactionService, Transaction] =
+    ZIO.serviceWithZIO[TransactionService](
+      _.performTransferByAccountNumber(
+        sourceAccountId,
+        destinationAccountNumber,
+        amount,
+        memo,
+        userId,
+      )
+    )
+
+  def deposit(
+    accountId: UUID,
+    amount: BigDecimal,
+    memo: Option[String],
+    userId: UserId,
+  ): RIO[TransactionService, Transaction] =
+    ZIO.serviceWithZIO[TransactionService](_.deposit(accountId, amount, memo, userId))
+
+  def withdraw(
+    accountId: UUID,
+    amount: BigDecimal,
+    memo: Option[String],
+    userId: UserId,
+  ): RIO[TransactionService, Transaction] =
+    ZIO.serviceWithZIO[TransactionService](_.withdraw(accountId, amount, memo, userId))
+
+  def getAccountTransactions(
+    accountId: UUID,
+    userId: UserId,
+    limit: Int,
+    offset: Int,
+    minAmount: Option[BigDecimal],
+    maxAmount: Option[BigDecimal],
+    startDate: Option[Instant],
+    endDate: Option[Instant],
+  ): RIO[TransactionService, List[Transaction]] =
+    ZIO.serviceWithZIO[TransactionService](
+      _.getAccountTransactions(
+        accountId,
+        userId,
+        limit,
+        offset,
+        minAmount,
+        maxAmount,
+        startDate,
+        endDate,
+      )
+    )

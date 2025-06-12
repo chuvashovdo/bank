@@ -2,8 +2,6 @@ package jwt.repository
 
 import zio.*
 import zio.test.*
-import user.models.UserId
-import jwt.models.RefreshToken
 import jwt.models.JwtRefreshToken
 import java.time.Instant
 import java.util.UUID
@@ -74,22 +72,18 @@ object TokenRepositorySpec extends ZIOSpecDefault:
     commonDependenciesLayer >>> (tokenRepoLayer ++ ZLayer
       .environment[Quill.Postgres[SnakeCase]])
 
-  // Вспомогательные функции для создания кастомных типов
-  private def unsafeUserId(id: String): UserId =
-    UserId(id).getOrElse(throw new RuntimeException(s"Invalid UserId in test setup: $id"))
-
   private def unsafeJwtRefreshToken(token: String): JwtRefreshToken =
     JwtRefreshToken(token).getOrElse(
       throw new RuntimeException(s"Invalid JwtRefreshToken in test setup: $token")
     )
 
   def createTestRefreshTokenEntity(
-    userId: String = "test-user",
+    userId: String = UUID.randomUUID().toString,
     expireInSeconds: Long = 3600,
   ): RefreshTokenEntity =
     RefreshTokenEntity(
-      id = UUID.randomUUID().toString(),
-      userId = unsafeUserId(userId).value,
+      id = UUID.randomUUID(),
+      userId = UUID.fromString(userId),
       refreshToken = unsafeJwtRefreshToken(s"token-${UUID.randomUUID()}").value,
       expiresAt = Instant.now().plusSeconds(expireInSeconds),
       createdAt = Instant.now(),
@@ -105,7 +99,7 @@ object TokenRepositorySpec extends ZIOSpecDefault:
           retrieved <- repo.findByRefreshToken(token.refreshToken)
         yield assertTrue(
           retrieved.token.value == token.refreshToken,
-          retrieved.userId.value == token.userId,
+          retrieved.userId.value.equals(token.userId),
           retrieved.expiresAt.toEpochMilli == token.expiresAt.toEpochMilli,
         )
       },
@@ -138,17 +132,17 @@ object TokenRepositorySpec extends ZIOSpecDefault:
       test("deleteAllByUserId should remove all user tokens") {
         for
           repo <- ZIO.service[TokenRepository]
-          userIdString = "multi-token-user"
+          userIdString = UUID.randomUUID().toString
           token1 = createTestRefreshTokenEntity(userIdString)
           token2 = createTestRefreshTokenEntity(userIdString)
-          otherUserToken = createTestRefreshTokenEntity("other-user")
+          otherUserToken = createTestRefreshTokenEntity()
           _ <- repo.saveRefreshToken(token1)
           _ <- repo.saveRefreshToken(token2)
           _ <- repo.saveRefreshToken(otherUserToken)
           beforeDelete1 <- repo.findByRefreshToken(token1.refreshToken).exit
           beforeDelete2 <- repo.findByRefreshToken(token2.refreshToken).exit
           beforeDeleteOther <- repo.findByRefreshToken(otherUserToken.refreshToken).exit
-          _ <- repo.deleteAllByUserId(userIdString)
+          _ <- repo.deleteAllByUserId(UUID.fromString(userIdString))
           afterDelete1 <- repo.findByRefreshToken(token1.refreshToken).exit
           afterDelete2 <- repo.findByRefreshToken(token2.refreshToken).exit
           afterDeleteOther <- repo.findByRefreshToken(otherUserToken.refreshToken).exit

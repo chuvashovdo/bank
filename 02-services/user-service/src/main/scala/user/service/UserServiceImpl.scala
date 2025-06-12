@@ -4,13 +4,8 @@ import user.models.{ User, UserId, Email, Password, FirstName, LastName }
 import user.repository.UserRepository
 import zio.*
 import org.mindrot.jbcrypt.BCrypt
-import common.errors.{
-  UserAlreadyExistsError,
-  InvalidCredentialsError,
-  UserNotActiveError,
-  InvalidOldPasswordError,
-  UserNotFoundError,
-}
+import user.errors.*
+import java.util.UUID
 
 class UserServiceImpl(userRepository: UserRepository) extends UserService:
   override def findUserById(id: UserId): Task[User] =
@@ -34,6 +29,7 @@ class UserServiceImpl(userRepository: UserRepository) extends UserService:
               passwordHash <- hashPassword(password.value)
               newUser <-
                 userRepository.create(
+                  UUID.randomUUID(),
                   email.value,
                   passwordHash,
                   firstName.map(_.value),
@@ -42,13 +38,13 @@ class UserServiceImpl(userRepository: UserRepository) extends UserService:
             yield newUser
           case otherError => ZIO.fail(otherError)
         },
-        success = _ => ZIO.fail(UserAlreadyExistsError(email)),
+        success = _ => ZIO.fail(UserAlreadyExistsError(email.value)),
       )
 
   override def validateCredentials(email: Email, password: Password): Task[User] =
     for
       user <- userRepository.findByEmail(email.value)
-      _ <- ZIO.fail(UserNotActiveError(email.value)).when(!user.isActive)
+      _ <- ZIO.fail(UserNotActiveError(user.id.value)).when(!user.isActive)
       isValid <- checkPassword(password.value, user.passwordHash)
       _ <- ZIO.fail(InvalidCredentialsError()).when(!isValid)
     yield user
@@ -67,9 +63,9 @@ class UserServiceImpl(userRepository: UserRepository) extends UserService:
   ): Task[Unit] =
     for
       user <- userRepository.findById(id.value)
-      _ <- ZIO.fail(UserNotActiveError(id.value)).when(!user.isActive)
+      _ <- ZIO.fail(UserNotActiveError(user.id.value)).when(!user.isActive)
       isValid <- checkPassword(oldPassword.value, user.passwordHash)
-      _ <- ZIO.fail(InvalidOldPasswordError(id)).when(!isValid)
+      _ <- ZIO.fail(InvalidOldPasswordError(id.value)).when(!isValid)
       newHash <- hashPassword(newPassword.value)
       _ <- userRepository.updatePassword(id.value, newHash)
     yield ()

@@ -10,10 +10,7 @@ object UserSpec extends ZIOSpecDefault:
       test("User should correctly serialize to JSON and back") {
         val user =
           User(
-            id =
-              UserId("test-1234").getOrElse(
-                throw new RuntimeException("Invalid UserId in test data")
-              ),
+            id = UserId.random,
             email =
               Email("test@example.com").getOrElse(
                 throw new RuntimeException("Invalid Email in test data")
@@ -33,21 +30,17 @@ object UserSpec extends ZIOSpecDefault:
         assertTrue(parsedUser.map(_.equals(user)).getOrElse(false))
       },
       test("UserId should correctly serialize to JSON and back") {
-        val userId =
-          UserId("user-id-12345").getOrElse(
-            throw new RuntimeException("Invalid UserId in test data")
-          )
+        val userId = UserId.random
         val json = userId.toJson
         val parsedId = json.fromJson[UserId]
 
         assertTrue(parsedId.isRight) &&
-        assertTrue(parsedId.map(_.equals(userId)).getOrElse(false)) &&
-        assertTrue(parsedId.map(_.value).getOrElse("") == "user-id-12345")
+        assertTrue(parsedId.map(_.equals(userId)).getOrElse(false))
       },
       test("Users with same values should be equal") {
         val user1 =
           User(
-            id = UserId("same-id").getOrElse(throw new RuntimeException("Invalid UserId")),
+            id = UserId.random,
             email =
               Email("same@example.com").getOrElse(throw new RuntimeException("Invalid Email")),
             passwordHash = "same-hash",
@@ -60,7 +53,7 @@ object UserSpec extends ZIOSpecDefault:
 
         val user2 =
           User(
-            id = UserId("same-id").getOrElse(throw new RuntimeException("Invalid UserId")),
+            id = user1.id,
             email =
               Email("same@example.com").getOrElse(throw new RuntimeException("Invalid Email")),
             passwordHash = "same-hash",
@@ -72,7 +65,7 @@ object UserSpec extends ZIOSpecDefault:
           )
 
         assertTrue(user1.equals(user2)) &&
-        assertTrue(user1.id.value == user2.id.value) &&
+        assertTrue(user1.id.equals(user2.id)) &&
         assertTrue(user1.email.value == user2.email.value) &&
         assertTrue(user1.firstName.map(_.value) == user2.firstName.map(_.value)) &&
         assertTrue(user1.lastName.map(_.value) == user2.lastName.map(_.value))
@@ -80,7 +73,7 @@ object UserSpec extends ZIOSpecDefault:
       test("Users with different values should not be equal") {
         val user1 =
           User(
-            id = UserId("id-1").getOrElse(throw new RuntimeException("Invalid UserId")),
+            id = UserId.random,
             email =
               Email("user1@example.com").getOrElse(throw new RuntimeException("Invalid Email")),
             passwordHash = "hash1",
@@ -93,7 +86,7 @@ object UserSpec extends ZIOSpecDefault:
 
         val user2 =
           User(
-            id = UserId("id-2").getOrElse(throw new RuntimeException("Invalid UserId")),
+            id = UserId.random,
             email =
               Email("user2@example.com").getOrElse(throw new RuntimeException("Invalid Email")),
             passwordHash = "hash2",

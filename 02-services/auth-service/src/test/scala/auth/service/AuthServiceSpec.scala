@@ -11,12 +11,17 @@ import jwt.models.*
 import jwt.models.{ JwtAccessToken, JwtRefreshToken }
 import java.time.Instant
 import jwt.entity.RefreshTokenEntity
-import common.errors.InvalidCredentialsError
-import common.errors.RefreshTokenNotFoundError
-import common.errors.UserNotFoundError
+import user.errors.InvalidCredentialsError
+import auth.errors.RefreshTokenNotFoundError
+import user.errors.UserNotFoundError
+import java.util.UUID
+
 object AuthServiceSpec extends ZIOSpecDefault:
-  private def unsafeUserId(id: String): UserId =
-    UserId(id).getOrElse(throw new RuntimeException(s"Invalid UserId in test setup: $id"))
+  private val existingUserId =
+    UUID.randomUUID()
+
+  private def unsafeUserId(id: UUID): UserId =
+    UserId(id)
   private def unsafeEmail(email: String): Email =
     Email(email).getOrElse(throw new RuntimeException(s"Invalid Email in test setup: $email"))
   private def unsafePassword(password: String): Password =
@@ -37,10 +42,8 @@ object AuthServiceSpec extends ZIOSpecDefault:
     )
 
   class MockUserService extends UserService:
-    private def internalUnsafeUserId(id: String): UserId =
-      UserId(id).getOrElse(
-        throw new RuntimeException(s"Invalid UserId in MockUserService setup: $id")
-      )
+    private def internalUnsafeUserId(id: UUID): UserId =
+      UserId(id)
     private def internalUnsafeEmail(email: String): Email =
       Email(email).getOrElse(
         throw new RuntimeException(s"Invalid Email in MockUserService setup: $email")
@@ -57,7 +60,7 @@ object AuthServiceSpec extends ZIOSpecDefault:
     private var users: Map[String, User] =
       Map:
         "existing@example.com" -> User(
-          internalUnsafeUserId("existing-user"),
+          internalUnsafeUserId(existingUserId),
           internalUnsafeEmail("existing@example.com"),
           "$2a$12$vZUm.NSY.hOIiDvmX6YObetwMnzdLxX7R9vkwXKLgFQdLxQPyJZEC",
           Some(internalUnsafeFirstName("Existing")),
@@ -85,7 +88,7 @@ object AuthServiceSpec extends ZIOSpecDefault:
       else
         val user =
           User(
-            internalUnsafeUserId(s"user-${users.size + 1}"),
+            internalUnsafeUserId(UUID.randomUUID()),
             email,
             s"hashed-${password.value}",
             firstName,
@@ -140,20 +143,20 @@ object AuthServiceSpec extends ZIOSpecDefault:
       val refreshToken = RefreshToken(jwtRefreshToken, issuedAt.plusSeconds(86400), userId)
       val refreshTokenEntity =
         RefreshTokenEntity(
-          id = s"refresh-token-${userId.value}",
+          id = UUID.randomUUID(),
           userId = refreshToken.userId.value,
           refreshToken = refreshToken.token.value,
           expiresAt = refreshToken.expiresAt,
           createdAt = Instant.now(),
         )
-      tokenRepository.saveRefreshToken(refreshTokenEntity)
-      ZIO.succeed(refreshToken)
+      tokenRepository.saveRefreshToken(refreshTokenEntity).as(refreshToken)
+
     override def validateToken(token: JwtAccessToken): Task[UserId] =
       validTokens.find { case (jwtAccessToken, _) => jwtAccessToken.value == token.value } match
         case Some((_, userId)) => ZIO.succeed(userId)
         case None =>
           if token.value.startsWith("valid-user-id-from-string-token") then
-            ZIO.succeed(unsafeUserId("existing-user"))
+            ZIO.succeed(unsafeUserId(UUID.randomUUID()))
           else if token.value.startsWith("invalid-token") then
             ZIO.fail(new IllegalArgumentException("Invalid token"))
           else if token.value.startsWith("expired-token") then
@@ -163,12 +166,9 @@ object AuthServiceSpec extends ZIOSpecDefault:
     override def renewAccessToken(token: JwtRefreshToken): Task[AccessToken] =
       for
         refreshToken <- tokenRepository.findByRefreshToken(token.value)
-        result <-
-          for
-            _ <- tokenRepository.deleteByRefreshToken(token.value)
-            accessToken <- createAccessToken(refreshToken.userId, Instant.now())
-          yield accessToken
-      yield result
+        _ <- tokenRepository.deleteByRefreshToken(refreshToken.token.value)
+        accessToken <- createAccessToken(refreshToken.userId, Instant.now())
+      yield accessToken
 
     override def invalidateRefreshTokens(userId: UserId): Task[Unit] =
       tokenRepository.deleteAllByUserId(userId.value)
@@ -192,32 +192,19 @@ object AuthServiceSpec extends ZIOSpecDefault:
         case None => ZIO.fail(RefreshTokenNotFoundError(refreshTokenKey))
 
     override def deleteByRefreshToken(refreshTokenString: String): Task[Unit] =
-      for _ <- ZIO.succeed { tokens = tokens - refreshTokenString } yield ()
+      ZIO.succeed { tokens = tokens - refreshTokenString }
 
-    override def deleteAllByUserId(userId: String): Task[Unit] =
+    override def deleteAllByUserId(userId: UUID): Task[Unit] =
       ZIO.succeed:
-        tokens = tokens.filter { case (_, token) => token.userId.value != userId }
+        tokens =
+          tokens.filter:
+            case (_, token) =>
+              !token.userId.value.equals(userId)
     override def cleanExpiredTokens(): Task[Unit] =
       ZIO.succeed(())
 
   val mockUserServiceLayer: ULayer[UserService] =
     ZLayer.succeed(new MockUserService)
-
-  val mockTokenRepository =
-    new MockTokenRepository
-  val mockTokenRepositoryLayer: ULayer[TokenRepository] =
-    ZLayer.succeed(mockTokenRepository)
-
-  val mockJwtServiceLayer: ULayer[JwtService] =
-    ZLayer.succeed(new MockJwtService(mockTokenRepository))
-
-  val testAuthServiceLayer: ZLayer[Any, Nothing, AuthService & TokenRepository] =
-    ZLayer.make[AuthService & TokenRepository](
-      mockUserServiceLayer,
-      mockJwtServiceLayer,
-      mockTokenRepositoryLayer,
-      AuthServiceImpl.layer,
-    )
 
   def spec =
     suite("AuthService")(
@@ -226,12 +213,14 @@ object AuthServiceSpec extends ZIOSpecDefault:
           authService <- ZIO.service[AuthService]
           token <-
             authService.login(unsafeEmail("existing@example.com"), unsafePassword("password123"))
-        yield assertTrue(
-          token.token.value.nonEmpty
+        yield assertTrue(token.token.value.nonEmpty)
+      }.provide {
+        ZLayer.make[AuthService](
+          mockUserServiceLayer,
+          ZLayer(ZIO.succeed(new MockJwtService(new MockTokenRepository))),
+          AuthServiceImpl.layer,
         )
-      }.provide(
-        ZLayer.make[AuthService](mockUserServiceLayer, mockJwtServiceLayer, AuthServiceImpl.layer)
-      ),
+      },
       test("login should return None for invalid credentials") {
         for
           authService <- ZIO.service[AuthService]
@@ -240,26 +229,31 @@ object AuthServiceSpec extends ZIOSpecDefault:
               .login(unsafeEmail("existing@example.com"), unsafePassword("wrong-password"))
               .exit
         yield assertTrue(result.isFailure)
-      }.provide(
-        ZLayer.make[AuthService](mockUserServiceLayer, mockJwtServiceLayer, AuthServiceImpl.layer)
-      ),
+      }.provide {
+        ZLayer.make[AuthService](
+          mockUserServiceLayer,
+          ZLayer(ZIO.succeed(new MockJwtService(new MockTokenRepository))),
+          AuthServiceImpl.layer,
+        )
+      },
       test("register should create user and return token") {
         for
           authService <- ZIO.service[AuthService]
           token <-
             authService.register(
               unsafeEmail("new@example.com"),
-              unsafePassword("secure-password"),
+              unsafePassword("password"),
               Some(unsafeFirstName("New")),
               Some(unsafeLastName("User")),
             )
-        yield assertTrue(
-          token.token.value.contains("access-token-for-user-"),
-          token.userId.value.nonEmpty,
+        yield assertTrue(token.token.value.nonEmpty)
+      }.provide {
+        ZLayer.make[AuthService](
+          mockUserServiceLayer,
+          ZLayer(ZIO.succeed(new MockJwtService(new MockTokenRepository))),
+          AuthServiceImpl.layer,
         )
-      }.provide(
-        ZLayer.make[AuthService](mockUserServiceLayer, mockJwtServiceLayer, AuthServiceImpl.layer)
-      ),
+      },
       test("register should fail for existing user") {
         for
           authService <- ZIO.service[AuthService]
@@ -273,73 +267,48 @@ object AuthServiceSpec extends ZIOSpecDefault:
               )
               .exit
         yield assertTrue(result.isFailure)
-      }.provide(
-        ZLayer.make[AuthService](mockUserServiceLayer, mockJwtServiceLayer, AuthServiceImpl.layer)
-      ),
-      test("logout should remove all refresh tokens for user") {
+      }.provide {
+        ZLayer.make[AuthService](
+          mockUserServiceLayer,
+          ZLayer(ZIO.succeed(new MockJwtService(new MockTokenRepository))),
+          AuthServiceImpl.layer,
+        )
+      },
+      test("logout should invalidate tokens") {
         for
           authService <- ZIO.service[AuthService]
+          jwtService <- ZIO.service[JwtService]
           tokenRepo <- ZIO.service[TokenRepository]
-
-          userId = unsafeUserId("logout-test-user")
-          jwtToken1 = unsafeJwtRefreshToken("refresh-token-1")
-          jwtToken2 = unsafeJwtRefreshToken("refresh-token-2")
-          refreshToken1 = RefreshToken(jwtToken1, Instant.now().plusSeconds(3600), userId)
-          refreshToken2 = RefreshToken(jwtToken2, Instant.now().plusSeconds(3600), userId)
-          refreshTokenEntity1 =
-            RefreshTokenEntity(
-              id = s"refresh-token-${userId.value}",
-              userId = refreshToken1.userId.value,
-              refreshToken = refreshToken1.token.value,
-              expiresAt = refreshToken1.expiresAt,
-              createdAt = Instant.now(),
-            )
-          _ <- tokenRepo.saveRefreshToken(refreshTokenEntity1)
-
+          userId = unsafeUserId(existingUserId)
+          refreshToken <- jwtService.createRefreshToken(userId, Instant.now())
           _ <- authService.logout(userId)
-
-          token1 <- tokenRepo.findByRefreshToken(refreshToken1.token.value).exit
-          token2 <- tokenRepo.findByRefreshToken(refreshToken2.token.value).exit
-        yield assertTrue(
-          token1.isFailure && token2.isFailure
+          foundToken <- tokenRepo.findByRefreshToken(refreshToken.token.value).exit
+        yield assertTrue(foundToken.isFailure)
+      }.provide {
+        val mockRepo = new MockTokenRepository
+        ZLayer.make[AuthService & JwtService & TokenRepository](
+          mockUserServiceLayer,
+          ZLayer(ZIO.succeed(new MockJwtService(mockRepo))),
+          ZLayer.succeed(mockRepo),
+          AuthServiceImpl.layer,
         )
-      }.provide(testAuthServiceLayer),
+      },
       test("refreshToken should create new access token") {
         for
           jwtService <- ZIO.service[JwtService]
           tokenRepo <- ZIO.service[TokenRepository]
-
-          userId = unsafeUserId("refresh-test-user")
-          jwtTestToken = unsafeJwtRefreshToken("refresh-token-test")
-          refreshToken =
-            RefreshToken(
-              jwtTestToken,
-              Instant.now().plusSeconds(3600),
-              userId,
-            )
-          refreshTokenEntity =
-            RefreshTokenEntity(
-              id = s"refresh-token-${userId.value}",
-              userId = refreshToken.userId.value,
-              refreshToken = refreshToken.token.value,
-              expiresAt = refreshToken.expiresAt,
-              createdAt = Instant.now(),
-            )
-          _ <- tokenRepo.saveRefreshToken(refreshTokenEntity)
-          savedToken <- tokenRepo.findByRefreshToken(refreshToken.token.value)
-          _ <- ZIO.debug(s"Saved token before refresh: $savedToken")
-
-          accessToken <- jwtService.renewAccessToken(refreshToken.token)
-
-          newTokenExists = accessToken.token.value.nonEmpty
-          remainingToken <- tokenRepo.findByRefreshToken(refreshToken.token.value).exit
-          _ <- ZIO.debug(s"Remaining token after refresh: $remainingToken")
-          oldTokenDeleted = remainingToken.isFailure
-        yield assertTrue(
-          newTokenExists,
-          oldTokenDeleted,
+          userId = unsafeUserId(UUID.randomUUID())
+          refreshToken <- jwtService.createRefreshToken(userId, Instant.now())
+          newAccessToken <- jwtService.renewAccessToken(refreshToken.token)
+          oldToken <- tokenRepo.findByRefreshToken(refreshToken.token.value).exit
+        yield assertTrue(newAccessToken.token.value.nonEmpty) && assertTrue(oldToken.isFailure)
+      }.provide {
+        val mockRepo = new MockTokenRepository
+        ZLayer.make[JwtService & TokenRepository](
+          ZLayer.succeed(mockRepo),
+          ZLayer(ZIO.succeed(new MockJwtService(mockRepo))),
         )
-      }.provide(
-        ZLayer.make[JwtService & TokenRepository](mockJwtServiceLayer, mockTokenRepositoryLayer)
-      ),
+      },
     )
+
+end AuthServiceSpec
