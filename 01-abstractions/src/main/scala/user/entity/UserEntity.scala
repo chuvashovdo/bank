@@ -1,9 +1,10 @@
 package user.entity
 
 import java.time.Instant
+import java.util.UUID
 
 final case class UserEntity(
-  id: String,
+  id: UUID,
   email: String,
   passwordHash: String,
   firstName: Option[String],

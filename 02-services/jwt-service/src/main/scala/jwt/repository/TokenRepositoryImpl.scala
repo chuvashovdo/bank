@@ -6,7 +6,9 @@ import io.getquill.*
 import io.getquill.jdbczio.Quill
 import jwt.models.{ RefreshToken, JwtRefreshToken }
 import user.models.UserId
-import common.errors.{ CorruptedDataInDBError, RefreshTokenNotFoundError }
+import auth.errors.RefreshTokenNotFoundError
+import common.errors.CorruptedDataInDBError
+import java.util.UUID
 
 class TokenRepositoryImpl(quill: Quill.Postgres[SnakeCase]) extends TokenRepository:
   import quill.*
@@ -34,28 +36,16 @@ class TokenRepositoryImpl(quill: Quill.Postgres[SnakeCase]) extends TokenReposit
               .fromEither(JwtRefreshToken(entity.refreshToken))
               .mapError { validationError =>
                 CorruptedDataInDBError(
-                  entityId = entity.id,
+                  entityId = entity.id.toString,
                   fieldName = "refreshToken",
                   fieldValue = entity.refreshToken,
                   validationErrorMessage = validationError.developerFriendlyMessage,
                 )
               }
 
-          val validatedUserIdZIO: Task[UserId] =
-            ZIO
-              .fromEither(UserId(entity.userId))
-              .mapError { validationError =>
-                CorruptedDataInDBError(
-                  entityId = entity.id,
-                  fieldName = "userId",
-                  fieldValue = entity.userId,
-                  validationErrorMessage = validationError.developerFriendlyMessage,
-                )
-              }
-
           for
             validToken <- validatedTokenZIO
-            validUserId <- validatedUserIdZIO
+            validUserId = UserId(entity.userId)
           yield RefreshToken(token = validToken, expiresAt = entity.expiresAt, userId = validUserId)
 
         case None =>
@@ -66,9 +56,9 @@ class TokenRepositoryImpl(quill: Quill.Postgres[SnakeCase]) extends TokenReposit
       query[RefreshTokenEntity].filter(_.refreshToken == lift(token)).delete
     }).unit
 
-  override def deleteAllByUserId(userId: String): Task[Unit] =
+  override def deleteAllByUserId(userId: UUID): Task[Unit] =
     run(quote {
-      query[RefreshTokenEntity].filter(_.userId == lift(userId)).delete
+      query[RefreshTokenEntity].filter(_.userId.equals(lift(userId))).delete
     }).unit
 
   override def cleanExpiredTokens(): Task[Unit] =

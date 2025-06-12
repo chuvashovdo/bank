@@ -10,7 +10,7 @@ import jwt.models.RefreshToken
 import jwt.repository.TokenRepository
 import jwt.entity.RefreshTokenEntity
 import java.util.UUID
-import common.errors.{
+import jwt.errors.{
   TokenMissingClaimError,
   TokenExpiredError,
   InvalidTokenSubjectFormatError,
@@ -32,7 +32,7 @@ class JwtServiceImpl(jwtConfig: JwtConfig, tokenRepository: TokenRepository) ext
         JwtClaim(
           issuer = Some(issuer),
           audience = Some(Set(audience)),
-          subject = Some(userId.value),
+          subject = Some(userId.value.toString),
           expiration = Some(expiresAt.toEpochMilli),
           issuedAt = Some(issuedAt.toEpochMilli),
         )
@@ -68,7 +68,7 @@ class JwtServiceImpl(jwtConfig: JwtConfig, tokenRepository: TokenRepository) ext
         JwtClaim(
           issuer = Some(issuer),
           audience = Some(Set(audience)),
-          subject = Some(userId.value),
+          subject = Some(userId.value.toString),
           expiration = Some(expiresAt.toEpochMilli),
           issuedAt = Some(issuedAt.toEpochMilli),
         )
@@ -90,7 +90,7 @@ class JwtServiceImpl(jwtConfig: JwtConfig, tokenRepository: TokenRepository) ext
           )
       domainRefreshToken <- ZIO.succeed(RefreshToken(jwtRefreshToken, expiresAt, userId))
 
-      entityId <- ZIO.succeed(UUID.randomUUID().toString())
+      entityId <- ZIO.succeed(UUID.randomUUID())
       currentTime <- ZIO.succeed(Instant.now())
 
       refreshTokenEntityToSave <-
@@ -122,8 +122,9 @@ class JwtServiceImpl(jwtConfig: JwtConfig, tokenRepository: TokenRepository) ext
       subject <- ZIO.fromOption(claim.subject).orElseFail(TokenMissingClaimError("subject"))
       userId <-
         ZIO
-          .fromEither(UserId(subject))
-          .mapError(err => InvalidTokenSubjectFormatError(subject, err.developerFriendlyMessage))
+          .attempt(UUID.fromString(subject))
+          .map(UserId(_))
+          .mapError(err => InvalidTokenSubjectFormatError(subject, err.getMessage))
     yield userId
 
   override def renewAccessToken(token: JwtRefreshToken): Task[AccessToken] =

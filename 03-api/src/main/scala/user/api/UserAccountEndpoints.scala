@@ -8,10 +8,11 @@ import sttp.tapir.*
 import sttp.tapir.json.zio.*
 import sttp.tapir.server.ServerEndpoint
 import user.models.*
-import user.models.{ UpdateUserRequest, ChangePasswordRequest }
+import user.models.dto.{ UpdateUserRequest, ChangePasswordRequest, UserResponse }
 import user.service.*
 import jwt.service.JwtService
 import zio.*
+import common.api.ApiEndpoint
 
 /** Объект-компаньон для хранения констант путей */
 object UserAccountEndpoints:
@@ -35,6 +36,7 @@ class UserAccountEndpoints(
     securedEndpoint
       .get
       .in("api" / "users" / "me")
+      .tag("User Account")
       .summary("Получение информации о текущем аутентифицированном пользователе")
       .out(jsonBody[UserResponse])
       .serverLogic { userId => _ =>
@@ -45,6 +47,7 @@ class UserAccountEndpoints(
     securedEndpoint
       .patch
       .in("api" / "users" / "me")
+      .tag("User Account")
       .summary("Обновление информации о текущем пользователе (имя, фамилия)")
       .in(jsonBody[UpdateUserRequest])
       .out(jsonBody[UserResponse])
@@ -56,6 +59,7 @@ class UserAccountEndpoints(
     securedEndpoint
       .patch
       .in("api" / "users" / "me" / "password")
+      .tag("User Account")
       .summary("Изменение пароля текущего пользователя")
       .in(jsonBody[ChangePasswordRequest])
       .out(statusCode(StatusCode.NoContent))
@@ -67,6 +71,7 @@ class UserAccountEndpoints(
     securedEndpoint
       .delete
       .in("api" / "users" / "me")
+      .tag("User Account")
       .summary("Деактивация учетной записи текущего пользователя")
       .out(statusCode(StatusCode.NoContent))
       .serverLogic { userId => _ =>

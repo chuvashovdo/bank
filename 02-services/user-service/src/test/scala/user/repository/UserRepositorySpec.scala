@@ -2,11 +2,8 @@ package user.repository
 
 import zio.*
 import zio.test.*
-import user.entity.UserEntity
 import user.models.User
 import user.models.UserId
-import user.mapper.UserEntityMapper
-import java.time.Instant
 import com.zaxxer.hikari.*
 import javax.sql.DataSource
 import io.getquill.*
@@ -17,15 +14,6 @@ import ch.qos.logback.classic.{ Level, Logger }
 import user.models.{ Email, FirstName, LastName }
 
 object UserRepositorySpec extends ZIOSpecDefault:
-  // Хелперы для создания кастомных типов в тестах/моках
-  private def unsafeUserId(id: String): UserId =
-    UserId(id).getOrElse(throw new RuntimeException("Invalid UserId in test setup"))
-  private def unsafeEmail(email: String): Email =
-    Email(email).getOrElse(throw new RuntimeException("Invalid Email in test setup"))
-  private def unsafeFirstName(name: String): FirstName =
-    FirstName(name).getOrElse(throw new RuntimeException("Invalid FirstName in test setup"))
-  private def unsafeLastName(name: String): LastName =
-    LastName(name).getOrElse(throw new RuntimeException("Invalid LastName in test setup"))
 
   // Подавляем логи от HikariCP и Quill
   locally:
@@ -72,82 +60,37 @@ object UserRepositorySpec extends ZIOSpecDefault:
           ds
       }(ds => ZIO.attemptBlocking(ds.close()).orDie)
 
-  class MockUserEntityMapper extends UserEntityMapper:
-    override def toUser(userEntity: UserEntity): Task[User] =
-      ZIO.attempt:
-        User(
-          id = unsafeUserId(userEntity.id),
-          email = unsafeEmail(userEntity.email),
-          passwordHash = userEntity.passwordHash,
-          firstName = userEntity.firstName.map(unsafeFirstName),
-          lastName = userEntity.lastName.map(unsafeLastName),
-          isActive = userEntity.isActive,
-        )
-    override def fromUser(
-      user: User,
-      createdAt: Instant,
-      updatedAt: Instant,
-    ): Task[UserEntity] =
-      ZIO.succeed:
-        UserEntity(
-          id = user.id.value,
-          email = user.email.value,
-          passwordHash = user.passwordHash,
-          firstName = user.firstName.map(_.value),
-          lastName = user.lastName.map(_.value),
-          isActive = user.isActive,
-          createdAt = createdAt,
-          updatedAt = updatedAt,
-        )
-
-    override def createUserEntity(
-      id: UserId,
-      email: String,
-      passwordHash: String,
-      firstName: Option[String],
-      lastName: Option[String],
-    ): Task[UserEntity] =
-      ZIO.succeed:
-        UserEntity(
-          id = id.value,
-          email = email,
-          passwordHash = passwordHash,
-          firstName = firstName,
-          lastName = lastName,
-          isActive = true,
-          createdAt = Instant.now(),
-          updatedAt = Instant.now(),
-        )
-
   val quillLayer: ZLayer[DataSource, Nothing, Quill.Postgres[SnakeCase]] =
     Quill.Postgres.fromNamingStrategy(SnakeCase)
-
-  val mapperLayer: ZLayer[Any, Nothing, UserEntityMapper] =
-    ZLayer.succeed(new MockUserEntityMapper)
 
   val commonDependenciesLayer: ZLayer[Any, Throwable, Quill.Postgres[SnakeCase]] =
     h2DataSourceLayer >>> quillLayer
 
-  val userRepoLayer: ZLayer[Quill.Postgres[SnakeCase] & UserEntityMapper, Throwable, UserRepository] =
+  val userRepoLayer: ZLayer[Quill.Postgres[SnakeCase], Throwable, UserRepository] =
     UserRepositoryImpl.layer
 
-  val testEnvLayer: ZLayer[Any, Throwable, UserRepository & Quill.Postgres[SnakeCase] & UserEntityMapper] =
-    (commonDependenciesLayer ++ mapperLayer) >>> (userRepoLayer ++ ZLayer
-      .environment[Quill.Postgres[SnakeCase] & UserEntityMapper])
+  val testEnvLayer: ZLayer[Any, Throwable, UserRepository & Quill.Postgres[SnakeCase]] =
+    commonDependenciesLayer >+> userRepoLayer
 
   def spec =
     suite("UserRepository")(
       test("findById should return None for non-existent user") {
         for
           repo <- ZIO.service[UserRepository]
-          user <- repo.findById("non-existent").exit
+          user <- repo.findById(UUID.randomUUID()).exit
         yield assertTrue(user.isFailure)
       },
       test("create and findById should work correctly") {
         for
           repo <- ZIO.service[UserRepository]
           createdUser <-
-            repo.create("test@example.com", "hashedPassword", Some("Test"), Some("User"))
+            repo.create(
+              UUID.randomUUID(),
+              "test@example.com",
+              "hashedPassword",
+              Some("Test"),
+              Some("User"),
+            )
           foundUser <- repo.findById(createdUser.id.value)
         yield assertTrue {
           foundUser.id.equals(createdUser.id) &&
@@ -159,7 +102,14 @@ object UserRepositorySpec extends ZIOSpecDefault:
       test("findByEmail should return user by email") {
         for
           repo <- ZIO.service[UserRepository]
-          _ <- repo.create("email_test@example.com", "password", Some("Email"), Some("Test"))
+          _ <-
+            repo.create(
+              UUID.randomUUID(),
+              "email_test@example.com",
+              "password",
+              Some("Email"),
+              Some("Test"),
+            )
           user <- repo.findByEmail("email_test@example.com")
         yield assertTrue {
           user.email.value == "email_test@example.com" &&
@@ -171,7 +121,13 @@ object UserRepositorySpec extends ZIOSpecDefault:
         for
           repo <- ZIO.service[UserRepository]
           createdUser <-
-            repo.create("update@example.com", "password", Some("Before"), Some("Update"))
+            repo.create(
+              UUID.randomUUID(),
+              "update@example.com",
+              "password",
+              Some("Before"),
+              Some("Update"),
+            )
           updatedUser <- repo.update(createdUser.id.value, Some("After"), Some("Updated"))
           retrievedUser <- repo.findById(createdUser.id.value)
         yield assertTrue {
@@ -185,7 +141,13 @@ object UserRepositorySpec extends ZIOSpecDefault:
         for
           repo <- ZIO.service[UserRepository]
           createdUser <-
-            repo.create("password@example.com", "oldPassword", Some("Password"), Some("Test"))
+            repo.create(
+              UUID.randomUUID(),
+              "password@example.com",
+              "oldPassword",
+              Some("Password"),
+              Some("Test"),
+            )
           result <- repo.updatePassword(createdUser.id.value, "newPassword")
           updatedUser <- repo.findById(createdUser.id.value)
         yield assertTrue {
@@ -196,7 +158,13 @@ object UserRepositorySpec extends ZIOSpecDefault:
         for
           repo <- ZIO.service[UserRepository]
           createdUser <-
-            repo.create("deactivate@example.com", "password", Some("Deactivate"), Some("Test"))
+            repo.create(
+              UUID.randomUUID(),
+              "deactivate@example.com",
+              "password",
+              Some("Deactivate"),
+              Some("Test"),
+            )
           result <- repo.deactivate(createdUser.id.value)
           updatedUser <- repo.findById(createdUser.id.value)
         yield assertTrue {
@@ -206,10 +174,10 @@ object UserRepositorySpec extends ZIOSpecDefault:
       test("operations should return appropriate results for non-existent users") {
         for
           repo <- ZIO.service[UserRepository]
-          nonExistentId = unsafeUserId("does-not-exist")
-          updateResult <- repo.update(nonExistentId.value, Some("First"), Some("Last")).exit
-          passwordResult <- repo.updatePassword(nonExistentId.value, "newPassword").exit
-          deactivateResult <- repo.deactivate(nonExistentId.value).exit
+          nonExistentId = UUID.randomUUID()
+          updateResult <- repo.update(nonExistentId, Some("First"), Some("Last")).exit
+          passwordResult <- repo.updatePassword(nonExistentId, "newPassword").exit
+          deactivateResult <- repo.deactivate(nonExistentId).exit
         yield assertTrue {
           updateResult.isFailure &&
           passwordResult.isFailure &&

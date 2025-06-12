@@ -8,11 +8,18 @@ import sttp.model.StatusCode
 import sttp.tapir.*
 import sttp.tapir.json.zio.*
 import user.models.*
-import user.models.{ RegisterUserRequest, LoginRequest, AuthResponse, RefreshTokenRequest }
+import user.models.dto.{
+  RegisterUserRequest,
+  LoginRequest,
+  AuthResponse,
+  RefreshTokenRequest,
+  UserResponse,
+}
 import user.service.*
 import zio.*
 import java.time.Instant
 import sttp.tapir.server.ServerEndpoint
+import common.api.ApiEndpoint
 
 /** Объект-компаньон для хранения констант путей */
 object AuthEndpoints:
@@ -40,6 +47,7 @@ class AuthEndpoints(
     baseEndpoint
       .post
       .in("api" / "users")
+      .tag("Auth")
       .summary("Регистрация нового пользователя")
       .in(jsonBody[RegisterUserRequest])
       .out(jsonBody[AuthResponse])
@@ -51,6 +59,7 @@ class AuthEndpoints(
     baseEndpoint
       .post
       .in("api" / "auth" / "token")
+      .tag("Auth")
       .summary("Аутентификация пользователя и получение токенов")
       .in(jsonBody[LoginRequest])
       .out(jsonBody[AuthResponse])
@@ -62,6 +71,7 @@ class AuthEndpoints(
     baseEndpoint
       .post
       .in("api" / "auth" / "token" / "refresh")
+      .tag("Auth")
       .summary("Обновление access токена с использованием refresh токена")
       .in(jsonBody[RefreshTokenRequest])
       .out(jsonBody[AuthResponse])
@@ -73,6 +83,7 @@ class AuthEndpoints(
     securedEndpoint
       .delete
       .in("api" / "auth" / "token")
+      .tag("Auth")
       .summary("Выход пользователя из системы (удаление сессии/токена)")
       .out(statusCode(StatusCode.NoContent))
       .serverLogic { userId => _ =>

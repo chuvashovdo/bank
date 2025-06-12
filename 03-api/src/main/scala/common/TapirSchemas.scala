@@ -5,6 +5,20 @@ import sttp.tapir.SchemaType
 import user.models.*
 import jwt.models.*
 import zio.json.{ JsonDecoder, JsonEncoder }
+import user.models.dto.{
+  AuthResponse,
+  ChangePasswordRequest,
+  LoginRequest,
+  RefreshTokenRequest,
+  RegisterUserRequest,
+  UpdateUserRequest,
+  UserResponse,
+}
+import bank.models.Balance
+import bank.models.AccountStatus
+import bank.models.dto.*
+import scala.math.BigDecimal
+import scala.util.Try
 
 object TapirSchemas:
   given schemaEmail: Schema[Email] =
@@ -38,9 +52,12 @@ object TapirSchemas:
   given schemaUserId: Schema[UserId] =
     Schema(SchemaType.SString(), format = Some("user_id"))
   given encoderUserId: JsonEncoder[UserId] =
-    JsonEncoder.string.contramap(_.value)
+    JsonEncoder.string.contramap(_.value.toString)
   given decoderUserId: JsonDecoder[UserId] =
-    JsonDecoder.string.mapOrFail(str => UserId(str).left.map(_.developerFriendlyMessage))
+    JsonDecoder.string.mapOrFail { str =>
+      try Right(UserId(java.util.UUID.fromString(str)))
+      catch case _: IllegalArgumentException => Left("Invalid UUID format for UserId")
+    }
 
   given schemaJwtAccessToken: Schema[JwtAccessToken] =
     Schema(SchemaType.SString(), format = Some("jwt_access_token"))
@@ -56,6 +73,24 @@ object TapirSchemas:
   given decoderJwtRefreshToken: JsonDecoder[JwtRefreshToken] =
     JsonDecoder.string.mapOrFail(str => JwtRefreshToken(str).left.map(_.developerFriendlyMessage))
 
+  // --- Bank Schemas ---
+
+  given schemaBalance: Schema[Balance] =
+    Schema.schemaForBigDecimal.map(Balance.apply(_).toOption)(_.value)
+
+  given schemaAccountStatus: Schema[AccountStatus] =
+    Schema.derivedEnumeration[AccountStatus].defaultStringBased
+  given encoderAccountStatus: JsonEncoder[AccountStatus] =
+    JsonEncoder.string.contramap(_.toString)
+  given decoderAccountStatus: JsonDecoder[AccountStatus] =
+    JsonDecoder
+      .string
+      .mapOrFail(s =>
+        Try(AccountStatus.valueOf(s)).toEither.left.map(_ => "Invalid account status")
+      )
+
+  // --- User DTOs ---
+
   given schemaRegisterUserRequest: Schema[RegisterUserRequest] =
     Schema.derived[RegisterUserRequest]
   given schemaLoginRequest: Schema[LoginRequest] =
@@ -70,3 +105,18 @@ object TapirSchemas:
     Schema.derived[AuthResponse]
   given schemaRefreshTokenRequest: Schema[RefreshTokenRequest] =
     Schema.derived[RefreshTokenRequest]
+
+  // --- Bank DTOs ---
+
+  given schemaCreateAccountRequest: Schema[CreateAccountRequest] =
+    Schema.derived[CreateAccountRequest]
+  given schemaAccountResponse: Schema[AccountResponse] =
+    Schema.derived[AccountResponse]
+  given schemaTransactionRequest: Schema[TransactionRequest] =
+    Schema.derived[TransactionRequest]
+  given schemaTransferRequest: Schema[TransferRequest] =
+    Schema.derived[TransferRequest]
+  given schemaTransferByAccountRequest: Schema[TransferByAccountRequest] =
+    Schema.derived[TransferByAccountRequest]
+  given schemaTransactionResponse: Schema[TransactionResponse] =
+    Schema.derived[TransactionResponse]
