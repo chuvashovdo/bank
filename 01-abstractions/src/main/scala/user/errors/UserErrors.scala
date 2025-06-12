@@ -23,24 +23,6 @@ final case class UserNotActiveError(userId: UUID) extends UserError:
   override def message: String =
     s"User $userId is not active."
 
-final case class InvalidEmailError(details: String) extends UserError:
-  override val errorCode: String =
-    "INVALID_EMAIL"
-  override def message: String =
-    s"Invalid email provided. Details: $details"
-
-final case class InvalidFirstNameError(details: String) extends UserError:
-  override val errorCode: String =
-    "INVALID_FIRST_NAME"
-  override def message: String =
-    s"Invalid first name provided. Details: $details"
-
-final case class InvalidLastNameError(details: String) extends UserError:
-  override val errorCode: String =
-    "INVALID_LAST_NAME"
-  override def message: String =
-    s"Invalid last name provided. Details: $details"
-
 final case class InvalidCredentialsError() extends UserError:
   override val errorCode: String =
     "INVALID_CREDENTIALS"

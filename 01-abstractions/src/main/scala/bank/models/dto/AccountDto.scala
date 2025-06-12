@@ -1,9 +1,8 @@
 package bank.models.dto
 
-import java.util.UUID
 import zio.json.{ DeriveJsonCodec, JsonCodec }
-
-import bank.models.{ AccountStatus, Balance }
+import user.models.UserId
+import bank.models.{ AccountId, AccountStatus, Balance }
 
 // --- Requests ---
 
@@ -16,9 +15,9 @@ object CreateAccountRequest:
 // --- Responses ---
 
 case class AccountResponse(
-  id: UUID,
+  id: AccountId,
   accountNumber: String,
-  userId: UUID,
+  userId: UserId,
   balance: Balance,
   currency: String,
   status: AccountStatus,

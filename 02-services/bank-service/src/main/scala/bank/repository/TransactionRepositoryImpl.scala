@@ -10,8 +10,7 @@ import scala.math.BigDecimal
 import java.time.Instant
 
 import bank.entity.TransactionEntity
-import bank.mapper.TransactionMapper
-import bank.models.Transaction
+import bank.errors.TransactionNotFoundError
 
 class TransactionRepositoryImpl(quill: Quill.Postgres[SnakeCase]) extends TransactionRepository:
   import quill.*
@@ -29,11 +28,15 @@ class TransactionRepositoryImpl(quill: Quill.Postgres[SnakeCase]) extends Transa
       _.createdAt -> "created_at",
     )
 
-  override def create(transaction: Transaction): Task[Transaction] =
-    val entity = TransactionMapper.toEntity(transaction)
+  override def create(transaction: TransactionEntity): Task[TransactionEntity] =
     run(quote {
-      query[TransactionEntity].insertValue(lift(entity))
+      query[TransactionEntity].insertValue(lift(transaction))
     }) *> ZIO.succeed(transaction)
+
+  override def findById(id: UUID): Task[TransactionEntity] =
+    run(quote(query[TransactionEntity].filter(_.id.equals(lift(id)))))
+      .map(_.headOption)
+      .flatMap(ZIO.fromOption(_).mapError(_ => TransactionNotFoundError(id)))
 
   override def findByAccountId(
     accountId: UUID,
@@ -43,7 +46,7 @@ class TransactionRepositoryImpl(quill: Quill.Postgres[SnakeCase]) extends Transa
     maxAmount: Option[BigDecimal],
     startDate: Option[Instant],
     endDate: Option[Instant],
-  ): Task[List[Transaction]] =
+  ): Task[List[TransactionEntity]] =
     type QueryTransformer =
       Quoted[EntityQuery[TransactionEntity]] => Quoted[EntityQuery[TransactionEntity]]
 
@@ -75,7 +78,7 @@ class TransactionRepositoryImpl(quill: Quill.Postgres[SnakeCase]) extends Transa
         .sortBy(_.createdAt)(Ord.desc)
         .drop(lift(offset))
         .take(lift(limit))
-    }).flatMap(ZIO.foreach(_)(TransactionMapper.toModel))
+    })
 
 object TransactionRepositoryImpl:
   val layer: URLayer[Quill.Postgres[SnakeCase], TransactionRepository] =

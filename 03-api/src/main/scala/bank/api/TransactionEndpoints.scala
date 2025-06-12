@@ -4,7 +4,6 @@ import zio.*
 import sttp.tapir.*
 import sttp.tapir.json.zio.*
 import sttp.tapir.server.ServerEndpoint
-import java.util.UUID
 import java.time.Instant
 import scala.math.BigDecimal
 
@@ -20,14 +19,16 @@ import bank.models.dto.{
   TransferRequest,
   TransferByAccountRequest,
 }
-import bank.models.Transaction
+import bank.models.{ AccountId, Transaction, TransactionId }
 
 class TransactionEndpoints(
   transactionService: TransactionService,
   jwtService: JwtService,
 ) extends ApiEndpoint:
-  private val basePath =
-    "api" / "accounts" / path[UUID]("accountId")
+  private val transactionsBasePath =
+    "api" / "transactions"
+  private val accountsBasePath =
+    "api" / "accounts" / path[AccountId]("accountId")
   private val securedEndpoint =
     createSecuredEndpoint(jwtService)
 
@@ -36,7 +37,7 @@ class TransactionEndpoints(
   val getTransactionsEndpoint: ServerEndpoint[Any, Task] =
     securedEndpoint
       .get
-      .in(basePath / "transactions")
+      .in(accountsBasePath / "transactions")
       .in(query[Int]("limit").default(20))
       .in(query[Int]("offset").default(0))
       .in(query[Option[BigDecimal]]("minAmount"))
@@ -49,7 +50,7 @@ class TransactionEndpoints(
       .serverLogic { userId =>
         {
           case (
-                 accountId: UUID,
+                 accountId: AccountId,
                  limit: Int,
                  offset: Int,
                  minAmount: Option[BigDecimal],
@@ -70,18 +71,29 @@ class TransactionEndpoints(
         }
       }
 
+  val getTransactionByIdEndpoint: ServerEndpoint[Any, Task] =
+    securedEndpoint
+      .get
+      .in(transactionsBasePath / path[TransactionId]("transactionId"))
+      .tag("Bank Transactions")
+      .summary("Получить информацию о конкретной транзакции")
+      .out(jsonBody[TransactionResponse])
+      .serverLogic { userId => transactionId =>
+        handleGetTransactionById(userId, transactionId).either
+      }
+
   /*
   val depositEndpoint: ServerEndpoint[Any, Task] =
     securedEndpoint
       .post
-      .in(basePath / "deposit")
+      .in(accountsBasePath / "deposit")
       .tag("Bank Transactions")
       .summary("Пополнить счет")
       .in(jsonBody[TransactionRequest])
       .out(jsonBody[TransactionResponse])
       .serverLogic { userId =>
         {
-          case (accountId: UUID, request: TransactionRequest) =>
+          case (accountId: AccountId, request: TransactionRequest) =>
             handleDeposit(userId, accountId, request).either
         }
       }
@@ -89,14 +101,14 @@ class TransactionEndpoints(
   val withdrawEndpoint: ServerEndpoint[Any, Task] =
     securedEndpoint
       .post
-      .in(basePath / "withdraw")
+      .in(accountsBasePath / "withdraw")
       .tag("Bank Transactions")
       .summary("Снять средства со счета")
       .in(jsonBody[TransactionRequest])
       .out(jsonBody[TransactionResponse])
       .serverLogic { userId =>
         {
-          case (accountId: UUID, request: TransactionRequest) =>
+          case (accountId: AccountId, request: TransactionRequest) =>
             handleWithdraw(userId, accountId, request).either
         }
       }
@@ -105,14 +117,14 @@ class TransactionEndpoints(
   val transferEndpoint: ServerEndpoint[Any, Task] =
     securedEndpoint
       .post
-      .in(basePath / "transfer")
+      .in(accountsBasePath / "transfer")
       .tag("Bank Transactions")
       .summary("Перевести средства на другой счет")
       .in(jsonBody[TransferRequest])
       .out(jsonBody[TransactionResponse])
       .serverLogic { userId =>
         {
-          case (sourceAccountId: UUID, request: TransferRequest) =>
+          case (sourceAccountId: AccountId, request: TransferRequest) =>
             handleTransfer(userId, sourceAccountId, request).either
         }
       }
@@ -120,14 +132,14 @@ class TransactionEndpoints(
   val transferByAccountEndpoint: ServerEndpoint[Any, Task] =
     securedEndpoint
       .post
-      .in(basePath / "transfer-by-account")
+      .in(accountsBasePath / "transfer-by-account")
       .tag("Bank Transactions")
       .summary("Перевести средства на другой счет по номеру счета")
       .in(jsonBody[TransferByAccountRequest])
       .out(jsonBody[TransactionResponse])
       .serverLogic { userId =>
         {
-          case (sourceAccountId: UUID, request: TransferByAccountRequest) =>
+          case (sourceAccountId: AccountId, request: TransferByAccountRequest) =>
             handleTransferByAccount(userId, sourceAccountId, request).either
         }
       }
@@ -135,6 +147,7 @@ class TransactionEndpoints(
   val all: List[ServerEndpoint[Any, Task]] =
     List(
       getTransactionsEndpoint,
+      getTransactionByIdEndpoint,
       // depositEndpoint,
       // withdrawEndpoint,
       transferEndpoint,
@@ -145,7 +158,7 @@ class TransactionEndpoints(
 
   private def handleGetTransactions(
     userId: UserId,
-    accountId: UUID,
+    accountId: AccountId,
     limit: Int,
     offset: Int,
     minAmount: Option[BigDecimal],
@@ -167,10 +180,19 @@ class TransactionEndpoints(
       .map(_.map(transactionToResponse))
       .mapError(handleCommonErrors(s"api/accounts/$accountId/transactions"))
 
+  private def handleGetTransactionById(
+    userId: UserId,
+    transactionId: TransactionId,
+  ): ZIO[Any, ErrorResponse, TransactionResponse] =
+    transactionService
+      .getTransactionById(transactionId, userId)
+      .map(transactionToResponse)
+      .mapError(handleCommonErrors(s"api/transactions/$transactionId"))
+
   /*
   private def handleDeposit(
     userId: UserId,
-    accountId: UUID,
+    accountId: AccountId,
     request: TransactionRequest,
   ): ZIO[Any, ErrorResponse, TransactionResponse] =
     transactionService
@@ -180,7 +202,7 @@ class TransactionEndpoints(
 
   private def handleWithdraw(
     userId: UserId,
-    accountId: UUID,
+    accountId: AccountId,
     request: TransactionRequest,
   ): ZIO[Any, ErrorResponse, TransactionResponse] =
     transactionService
@@ -191,7 +213,7 @@ class TransactionEndpoints(
 
   private def handleTransfer(
     userId: UserId,
-    sourceAccountId: UUID,
+    sourceAccountId: AccountId,
     request: TransferRequest,
   ): ZIO[Any, ErrorResponse, TransactionResponse] =
     transactionService
@@ -207,7 +229,7 @@ class TransactionEndpoints(
 
   private def handleTransferByAccount(
     userId: UserId,
-    sourceAccountId: UUID,
+    sourceAccountId: AccountId,
     request: TransferByAccountRequest,
   ): ZIO[Any, ErrorResponse, TransactionResponse] =
     transactionService

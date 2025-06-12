@@ -1,8 +1,8 @@
 package bank.models.dto
 
-import java.util.UUID
 import scala.math.BigDecimal
 import zio.json.{ DeriveJsonCodec, JsonCodec }
+import bank.models.{ AccountId, TransactionId }
 
 // --- Requests ---
 
@@ -16,7 +16,7 @@ object TransactionRequest:
     DeriveJsonCodec.gen
 
 case class TransferRequest(
-  destinationAccountId: UUID,
+  destinationAccountId: AccountId,
   amount: BigDecimal,
   memo: Option[String],
 )
@@ -38,9 +38,9 @@ object TransferByAccountRequest:
 // --- Responses ---
 
 case class TransactionResponse(
-  id: UUID,
-  sourceAccountId: Option[UUID],
-  destinationAccountId: Option[UUID],
+  id: TransactionId,
+  sourceAccountId: Option[AccountId],
+  destinationAccountId: Option[AccountId],
   amount: BigDecimal,
   currency: String,
   memo: Option[String],

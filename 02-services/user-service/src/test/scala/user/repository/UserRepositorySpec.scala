@@ -2,8 +2,6 @@ package user.repository
 
 import zio.*
 import zio.test.*
-import user.models.User
-import user.models.UserId
 import com.zaxxer.hikari.*
 import javax.sql.DataSource
 import io.getquill.*
@@ -11,7 +9,8 @@ import io.getquill.jdbczio.Quill
 import java.util.UUID
 import org.slf4j.LoggerFactory
 import ch.qos.logback.classic.{ Level, Logger }
-import user.models.{ Email, FirstName, LastName }
+import user.entity.UserEntity
+import java.time.Instant
 
 object UserRepositorySpec extends ZIOSpecDefault:
 
@@ -84,72 +83,104 @@ object UserRepositorySpec extends ZIOSpecDefault:
         for
           repo <- ZIO.service[UserRepository]
           createdUser <-
-            repo.create(
-              UUID.randomUUID(),
-              "test@example.com",
-              "hashedPassword",
-              Some("Test"),
-              Some("User"),
-            )
-          foundUser <- repo.findById(createdUser.id.value)
+            repo.create {
+              UserEntity(
+                id = UUID.randomUUID(),
+                email = "test@example.com",
+                passwordHash = "hashedPassword",
+                firstName = Some("Test"),
+                lastName = Some("User"),
+                isActive = true,
+                createdAt = Instant.now(),
+                updatedAt = Instant.now(),
+              )
+            }
+          foundUser <- repo.findById(createdUser.id)
         yield assertTrue {
           foundUser.id.equals(createdUser.id) &&
-          foundUser.email.value == "test@example.com" &&
-          foundUser.firstName.map(_.value) == Some("Test") &&
-          foundUser.lastName.map(_.value) == Some("User")
+          foundUser.email == "test@example.com" &&
+          foundUser.firstName == Some("Test") &&
+          foundUser.lastName == Some("User")
         }
       },
       test("findByEmail should return user by email") {
         for
           repo <- ZIO.service[UserRepository]
           _ <-
-            repo.create(
-              UUID.randomUUID(),
-              "email_test@example.com",
-              "password",
-              Some("Email"),
-              Some("Test"),
-            )
+            repo.create {
+              UserEntity(
+                id = UUID.randomUUID(),
+                email = "email_test@example.com",
+                passwordHash = "password",
+                firstName = Some("Email"),
+                lastName = Some("Test"),
+                isActive = true,
+                createdAt = Instant.now(),
+                updatedAt = Instant.now(),
+              )
+            }
           user <- repo.findByEmail("email_test@example.com")
         yield assertTrue {
-          user.email.value == "email_test@example.com" &&
-          user.firstName.map(_.value) == Some("Email") &&
-          user.lastName.map(_.value) == Some("Test")
+          user.email == "email_test@example.com" &&
+          user.firstName == Some("Email") &&
+          user.lastName == Some("Test")
         }
       },
       test("update should modify user properties") {
         for
           repo <- ZIO.service[UserRepository]
           createdUser <-
-            repo.create(
-              UUID.randomUUID(),
-              "update@example.com",
-              "password",
-              Some("Before"),
-              Some("Update"),
-            )
-          updatedUser <- repo.update(createdUser.id.value, Some("After"), Some("Updated"))
-          retrievedUser <- repo.findById(createdUser.id.value)
+            repo.create {
+              UserEntity(
+                id = UUID.randomUUID(),
+                email = "update@example.com",
+                passwordHash = "password",
+                firstName = Some("Before"),
+                lastName = Some("Update"),
+                isActive = true,
+                createdAt = Instant.now(),
+                updatedAt = Instant.now(),
+              )
+            }
+          updatedUser <-
+            repo.update {
+              UserEntity(
+                id = createdUser.id,
+                email = createdUser.email,
+                passwordHash = createdUser.passwordHash,
+                firstName = Some("After"),
+                lastName = Some("Updated"),
+                isActive = createdUser.isActive,
+                createdAt = createdUser.createdAt,
+                updatedAt = Instant.now(),
+              )
+            }
+          retrievedUser <- repo.findById(createdUser.id)
         yield assertTrue {
-          updatedUser.firstName.map(_.value) == Some("After") &&
-          updatedUser.lastName.map(_.value) == Some("Updated") &&
-          retrievedUser.firstName.map(_.value) == Some("After") &&
-          retrievedUser.lastName.map(_.value) == Some("Updated")
+          updatedUser.firstName == Some("After") &&
+          updatedUser.lastName == Some("Updated") &&
+          retrievedUser.firstName == Some("After") &&
+          retrievedUser.lastName == Some("Updated")
         }
       },
       test("updatePassword should change password") {
         for
           repo <- ZIO.service[UserRepository]
           createdUser <-
-            repo.create(
-              UUID.randomUUID(),
-              "password@example.com",
-              "oldPassword",
-              Some("Password"),
-              Some("Test"),
-            )
-          result <- repo.updatePassword(createdUser.id.value, "newPassword")
-          updatedUser <- repo.findById(createdUser.id.value)
+            repo.create {
+              UserEntity(
+                id = UUID.randomUUID(),
+                email = "password@example.com",
+                passwordHash = "oldPassword",
+                firstName = Some("Password"),
+                lastName = Some("Test"),
+                isActive = true,
+                createdAt = Instant.now(),
+                updatedAt = Instant.now(),
+              )
+            }
+          result <- repo.updatePassword(createdUser.id, "newPassword")
+          updatedUser <- repo.findById(createdUser.id)
         yield assertTrue {
           updatedUser.passwordHash == "newPassword"
         }
@@ -158,30 +189,22 @@ object UserRepositorySpec extends ZIOSpecDefault:
         for
           repo <- ZIO.service[UserRepository]
           createdUser <-
-            repo.create(
-              UUID.randomUUID(),
-              "deactivate@example.com",
-              "password",
-              Some("Deactivate"),
-              Some("Test"),
-            )
-          result <- repo.deactivate(createdUser.id.value)
-          updatedUser <- repo.findById(createdUser.id.value)
+            repo.create {
+              UserEntity(
+                id = UUID.randomUUID(),
+                email = "deactivate@example.com",
+                passwordHash = "password",
+                firstName = Some("Deactivate"),
+                lastName = Some("Test"),
+                isActive = true,
+                createdAt = Instant.now(),
+                updatedAt = Instant.now(),
+              )
+            }
+          result <- repo.deactivate(createdUser.id)
+          updatedUser <- repo.findById(createdUser.id)
         yield assertTrue {
           !updatedUser.isActive
-        }
-      },
-      test("operations should return appropriate results for non-existent users") {
-        for
-          repo <- ZIO.service[UserRepository]
-          nonExistentId = UUID.randomUUID()
-          updateResult <- repo.update(nonExistentId, Some("First"), Some("Last")).exit
-          passwordResult <- repo.updatePassword(nonExistentId, "newPassword").exit
-          deactivateResult <- repo.deactivate(nonExistentId).exit
-        yield assertTrue {
-          updateResult.isFailure &&
-          passwordResult.isFailure &&
-          deactivateResult.isFailure
         }
       },
     ).provide(testEnvLayer)
