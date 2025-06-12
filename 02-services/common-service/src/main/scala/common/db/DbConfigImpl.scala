@@ -1,4 +1,4 @@
-package auth.config
+package common.db
 
 import zio.*
 import io.getquill.jdbczio.Quill

@@ -1,4 +1,4 @@
-package auth.config
+package common.db
 
 final case class DbConfig(
   url: String,
