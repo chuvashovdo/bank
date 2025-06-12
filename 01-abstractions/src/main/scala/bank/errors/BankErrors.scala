@@ -22,7 +22,7 @@ final case class AccountNotFoundError(accountId: UUID) extends BankError:
   override def message: String =
     s"Account with id $accountId not found."
 
-final case class AccountNotFoundErrorByNumber(accountNumber: String) extends BankError:
+final case class AccountNotFoundByNumberError(accountNumber: String) extends BankError:
   override val errorCode: String =
     "ACCOUNT_NOT_FOUND"
   override def message: String =
@@ -63,3 +63,9 @@ final case class CannotTransferToSameAccountError(accountId: UUID) extends BankE
     "SELF_TRANSFER_NOT_ALLOWED"
   override val message: String =
     s"Cannot transfer funds to the same account: $accountId"
+
+final case class TransactionNotFoundError(transactionId: UUID) extends BankError:
+  override val errorCode: String =
+    "TRANSACTION_NOT_FOUND"
+  override val message: String =
+    s"Transaction with id $transactionId not found."

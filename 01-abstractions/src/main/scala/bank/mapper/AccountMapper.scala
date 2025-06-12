@@ -4,12 +4,13 @@ import zio.{ ZIO, Task }
 import bank.models.{ Account, Balance }
 import bank.entity.AccountEntity
 import user.models.UserId
+import bank.models.AccountId
 
 object AccountMapper:
   def toModel(entity: AccountEntity): Task[Account] =
-    for balance <- ZIO.fromEither(Balance(entity.balance)).mapError(e => new Exception(e.details))
+    for balance <- ZIO.fromEither(Balance(entity.balance))
     yield Account(
-      id = entity.id,
+      id = AccountId(entity.id),
       userId = UserId(entity.userId),
       accountNumber = entity.accountNumber,
       balance = balance,
@@ -21,7 +22,7 @@ object AccountMapper:
 
   def toEntity(model: Account): AccountEntity =
     AccountEntity(
-      id = model.id,
+      id = model.id.value,
       userId = model.userId.value,
       accountNumber = model.accountNumber,
       balance = model.balance.value,

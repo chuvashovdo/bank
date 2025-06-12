@@ -19,6 +19,8 @@ import bank.models.AccountStatus
 import bank.models.dto.*
 import scala.math.BigDecimal
 import scala.util.Try
+import sttp.tapir.{ Codec, CodecFormat }
+import bank.models.{ AccountId, TransactionId }
 
 object TapirSchemas:
   given schemaEmail: Schema[Email] =
@@ -120,3 +122,31 @@ object TapirSchemas:
     Schema.derived[TransferByAccountRequest]
   given schemaTransactionResponse: Schema[TransactionResponse] =
     Schema.derived[TransactionResponse]
+
+  given schemaAccountId: Schema[AccountId] =
+    Schema(SchemaType.SString(), format = Some("account_id"))
+  given encoderAccountId: JsonEncoder[AccountId] =
+    JsonEncoder.string.contramap(_.value.toString)
+  given decoderAccountId: JsonDecoder[AccountId] =
+    JsonDecoder.string.mapOrFail { str =>
+      try Right(AccountId(java.util.UUID.fromString(str)))
+      catch case _: IllegalArgumentException => Left("Invalid UUID format for AccountId")
+    }
+
+  given schemaTransactionId: Schema[TransactionId] =
+    Schema(SchemaType.SString(), format = Some("transaction_id"))
+  given encoderTransactionId: JsonEncoder[TransactionId] =
+    JsonEncoder.string.contramap(_.value.toString)
+  given decoderTransactionId: JsonDecoder[TransactionId] =
+    JsonDecoder.string.mapOrFail { str =>
+      try Right(TransactionId(java.util.UUID.fromString(str)))
+      catch case _: IllegalArgumentException => Left("Invalid UUID format for TransactionId")
+    }
+
+  // --- Path Codecs ---
+  given Codec[String, UserId, CodecFormat.TextPlain] =
+    Codec.uuid.map(UserId.apply)(_.value)
+  given Codec[String, AccountId, CodecFormat.TextPlain] =
+    Codec.uuid.map(AccountId.apply)(_.value)
+  given Codec[String, TransactionId, CodecFormat.TextPlain] =
+    Codec.uuid.map(TransactionId.apply)(_.value)

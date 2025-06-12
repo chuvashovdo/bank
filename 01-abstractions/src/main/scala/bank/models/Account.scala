@@ -1,12 +1,11 @@
 package bank.models
 
 import zio.json.*
-import java.util.UUID
 import java.time.Instant
 import user.models.UserId
 
 final case class Account(
-  id: UUID,
+  id: AccountId,
   userId: UserId,
   accountNumber: String,
   balance: Balance,

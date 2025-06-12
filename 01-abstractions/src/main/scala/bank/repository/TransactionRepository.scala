@@ -1,13 +1,16 @@
 package bank.repository
 
 import zio.*
-import java.util.UUID
-import bank.models.Transaction
 import scala.math.BigDecimal
 import java.time.Instant
+import java.util.UUID
+import bank.entity.TransactionEntity
 
 trait TransactionRepository:
-  def create(transaction: Transaction): Task[Transaction]
+  def create(transaction: TransactionEntity): Task[TransactionEntity]
+
+  def findById(id: UUID): Task[TransactionEntity]
+
   def findByAccountId(
     accountId: UUID,
     limit: Int,
@@ -16,11 +19,14 @@ trait TransactionRepository:
     maxAmount: Option[BigDecimal],
     startDate: Option[Instant],
     endDate: Option[Instant],
-  ): Task[List[Transaction]]
+  ): Task[List[TransactionEntity]]
 
 object TransactionRepository:
-  def create(transaction: Transaction): RIO[TransactionRepository, Transaction] =
+  def create(transaction: TransactionEntity): RIO[TransactionRepository, TransactionEntity] =
     ZIO.serviceWithZIO[TransactionRepository](_.create(transaction))
+
+  def findById(id: UUID): RIO[TransactionRepository, TransactionEntity] =
+    ZIO.serviceWithZIO[TransactionRepository](_.findById(id))
 
   def findByAccountId(
     accountId: UUID,
@@ -30,7 +36,7 @@ object TransactionRepository:
     maxAmount: Option[BigDecimal],
     startDate: Option[Instant],
     endDate: Option[Instant],
-  ): RIO[TransactionRepository, List[Transaction]] =
+  ): RIO[TransactionRepository, List[TransactionEntity]] =
     ZIO.serviceWithZIO[TransactionRepository](
       _.findByAccountId(accountId, limit, offset, minAmount, maxAmount, startDate, endDate)
     )

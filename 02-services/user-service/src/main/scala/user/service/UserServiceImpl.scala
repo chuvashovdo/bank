@@ -1,18 +1,21 @@
 package user.service
 
-import user.models.{ User, UserId, Email, Password, FirstName, LastName }
+import user.entity.UserEntity
+import user.mapper.UserMapper
+import user.models.*
 import user.repository.UserRepository
 import zio.*
 import org.mindrot.jbcrypt.BCrypt
 import user.errors.*
 import java.util.UUID
+import java.time.Instant
 
 class UserServiceImpl(userRepository: UserRepository) extends UserService:
   override def findUserById(id: UserId): Task[User] =
-    userRepository.findById(id.value)
+    userRepository.findById(id.value).flatMap(UserMapper.toModel)
 
   override def findUserByEmail(email: Email): Task[User] =
-    userRepository.findByEmail(email.value)
+    userRepository.findByEmail(email.value).flatMap(UserMapper.toModel)
 
   override def registerUser(
     email: Email,
@@ -27,15 +30,21 @@ class UserServiceImpl(userRepository: UserRepository) extends UserService:
           case _: UserNotFoundError =>
             for
               passwordHash <- hashPassword(password.value)
-              newUser <-
-                userRepository.create(
-                  UUID.randomUUID(),
-                  email.value,
-                  passwordHash,
-                  firstName.map(_.value),
-                  lastName.map(_.value),
+              now = Instant.now()
+              userEntity =
+                UserEntity(
+                  id = UUID.randomUUID(),
+                  email = email.value,
+                  passwordHash = passwordHash,
+                  firstName = firstName.map(_.value),
+                  lastName = lastName.map(_.value),
+                  isActive = true,
+                  createdAt = now,
+                  updatedAt = now,
                 )
-            yield newUser
+              createdEntity <- userRepository.create(userEntity)
+              user <- UserMapper.toModel(createdEntity)
+            yield user
           case otherError => ZIO.fail(otherError)
         },
         success = _ => ZIO.fail(UserAlreadyExistsError(email.value)),
@@ -43,7 +52,8 @@ class UserServiceImpl(userRepository: UserRepository) extends UserService:
 
   override def validateCredentials(email: Email, password: Password): Task[User] =
     for
-      user <- userRepository.findByEmail(email.value)
+      userEntity <- userRepository.findByEmail(email.value)
+      user <- UserMapper.toModel(userEntity)
       _ <- ZIO.fail(UserNotActiveError(user.id.value)).when(!user.isActive)
       isValid <- checkPassword(password.value, user.passwordHash)
       _ <- ZIO.fail(InvalidCredentialsError()).when(!isValid)
@@ -54,7 +64,18 @@ class UserServiceImpl(userRepository: UserRepository) extends UserService:
     firstName: Option[FirstName],
     lastName: Option[LastName],
   ): Task[User] =
-    userRepository.update(id.value, firstName.map(_.value), lastName.map(_.value))
+    for
+      existingEntity <- userRepository.findById(id.value)
+      now = Instant.now()
+      updatedEntity =
+        existingEntity.copy(
+          firstName = firstName.map(_.value).orElse(existingEntity.firstName),
+          lastName = lastName.map(_.value).orElse(existingEntity.lastName),
+          updatedAt = now,
+        )
+      resultEntity <- userRepository.update(updatedEntity)
+      user <- UserMapper.toModel(resultEntity)
+    yield user
 
   override def changePassword(
     id: UserId,
@@ -62,7 +83,8 @@ class UserServiceImpl(userRepository: UserRepository) extends UserService:
     newPassword: Password,
   ): Task[Unit] =
     for
-      user <- userRepository.findById(id.value)
+      userEntity <- userRepository.findById(id.value)
+      user <- UserMapper.toModel(userEntity)
       _ <- ZIO.fail(UserNotActiveError(user.id.value)).when(!user.isActive)
       isValid <- checkPassword(oldPassword.value, user.passwordHash)
       _ <- ZIO.fail(InvalidOldPasswordError(id.value)).when(!isValid)
@@ -72,7 +94,7 @@ class UserServiceImpl(userRepository: UserRepository) extends UserService:
 
   override def deactivateUser(id: UserId): Task[Unit] =
     for
-      user <- userRepository.findById(id.value)
+      _ <- userRepository.findById(id.value)
       _ <- userRepository.deactivate(id.value)
     yield ()
 

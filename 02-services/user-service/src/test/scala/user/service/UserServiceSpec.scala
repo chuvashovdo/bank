@@ -9,6 +9,8 @@ import user.service.*
 import java.util.UUID
 import org.mindrot.jbcrypt.BCrypt
 import user.errors.*
+import user.entity.UserEntity
+import java.time.Instant
 
 object UserServiceSpec extends ZIOSpecDefault:
   private def valid[E <: Throwable, A](either: Either[E, A], fieldName: String): A =
@@ -44,98 +46,79 @@ object UserServiceSpec extends ZIOSpecDefault:
     BCrypt.hashpw("password", BCrypt.gensalt(4))
 
   class MockUserRepository extends UserRepository:
-    private var users: Map[UserId, User] =
+    private var users: Map[UUID, UserEntity] =
+      val now = Instant.now()
       Map(
-        unsafeUserId(userId1) -> User(
-          unsafeUserId(userId1),
-          unsafeEmail("test@test.com"),
+        userId1 -> UserEntity(
+          userId1,
+          "test@test.com",
           passwordUser1Hashed,
-          Some(unsafeFirstName("Test")),
-          Some(unsafeLastName("User")),
+          Some("Test"),
+          Some("User"),
           isActive = true,
+          now,
+          now,
         ),
-        unsafeUserId(userId2) -> User(
-          unsafeUserId(userId2),
-          unsafeEmail("test2@test.com"),
+        userId2 -> UserEntity(
+          userId2,
+          "test2@test.com",
           passwordUser2Hashed,
-          Some(unsafeFirstName("Test2")),
-          Some(unsafeLastName("User2")),
+          Some("Test2"),
+          Some("User2"),
           isActive = true,
+          now,
+          now,
         ),
-        unsafeUserId(userId3) -> User(
-          unsafeUserId(userId3),
-          unsafeEmail("testdeactivate@test.com"),
+        userId3 -> UserEntity(
+          userId3,
+          "testdeactivate@test.com",
           passwordUser3Hashed,
-          Some(unsafeFirstName("Test")),
-          Some(unsafeLastName("User")),
+          Some("Test"),
+          Some("User"),
           isActive = false,
+          now,
+          now,
         ),
       )
 
-    override def findById(id: UUID): Task[User] =
-      users.get(unsafeUserId(id)) match
+    override def findById(id: UUID): Task[UserEntity] =
+      users.get(id) match
         case Some(user) => ZIO.succeed(user)
-        case None => ZIO.fail(new UserNotFoundError(id.toString))
+        case None => ZIO.fail(UserNotFoundError(id))
 
-    override def findByEmail(email: String): Task[User] =
-      users.values.find(_.email.value == email) match
+    override def findByEmail(email: String): Task[UserEntity] =
+      users.values.find(_.email == email) match
         case Some(user) => ZIO.succeed(user)
-        case None => ZIO.fail(new UserNotFoundError(email))
+        case None => ZIO.fail(UserNotFoundError(email))
 
-    override def create(
-      id: UUID,
-      emailStr: String,
-      passwordHash: String,
-      firstNameStr: Option[String],
-      lastNameStr: Option[String],
-    ): Task[User] =
-      val newEmail = unsafeEmail(emailStr)
-      val newFirstName = firstNameStr.map(unsafeFirstName)
-      val newLastName = lastNameStr.map(unsafeLastName)
-      val newUser =
-        User(
-          unsafeUserId(id),
-          newEmail,
-          passwordHash,
-          newFirstName,
-          newLastName,
-          isActive = true,
-        )
-      users += (unsafeUserId(id) -> newUser)
-      ZIO.succeed(newUser)
+    override def create(user: UserEntity): Task[UserEntity] =
+      ZIO.succeed:
+        users = users + (user.id -> user)
+        user
 
-    override def update(
-      id: UUID,
-      firstNameStr: Option[String],
-      lastNameStr: Option[String],
-    ): Task[User] =
-      users.get(UserId(id)).fold(ZIO.fail(new UserNotFoundError(id.toString))) { user =>
-        if !user.isActive then ZIO.fail(new UserNotActiveError(id))
-        else
-          val updatedUser =
-            user.copy(
-              firstName = firstNameStr.map(unsafeFirstName),
-              lastName = lastNameStr.map(unsafeLastName),
-            )
-          users += (UserId(id) -> updatedUser)
-          ZIO.succeed(updatedUser)
-      }
+    override def update(user: UserEntity): Task[UserEntity] =
+      users.get(user.id) match
+        case Some(_) =>
+          ZIO.succeed:
+            users = users + (user.id -> user)
+            user
+        case None => ZIO.fail(UserNotFoundError(user.id))
 
     override def updatePassword(id: UUID, passwordHash: String): Task[Unit] =
-      users.get(UserId(id)).fold(ZIO.fail(new UserNotFoundError(id.toString))) { user =>
-        if !user.isActive then ZIO.fail(new UserNotActiveError(id))
-        else
-          val updatedUser = user.copy(passwordHash = passwordHash)
-          users += (UserId(id) -> updatedUser)
-          ZIO.succeed(())
-      }
+      users.get(id) match
+        case Some(user) =>
+          val updatedUser = user.copy(passwordHash = passwordHash, updatedAt = Instant.now())
+          users = users + (id -> updatedUser)
+          ZIO.unit
+        case None => ZIO.fail(UserNotFoundError(id))
 
     override def deactivate(id: UUID): Task[Unit] =
-      users.get(UserId(id)).fold(ZIO.fail(new UserNotFoundError(id.toString))) { user =>
-        val updatedUser = user.copy(isActive = false)
-        users += (UserId(id) -> updatedUser)
-        ZIO.succeed(())
-      }
+      users.get(id) match
+        case Some(user) =>
+          val updatedUser = user.copy(isActive = false, updatedAt = Instant.now())
+          users = users + (id -> updatedUser)
+          ZIO.unit
+        case None => ZIO.fail(UserNotFoundError(id))
 
   val mockUserRepositoryLayer: ULayer[UserRepository] =
     ZLayer.succeed(new MockUserRepository)
@@ -219,22 +202,14 @@ object UserServiceSpec extends ZIOSpecDefault:
         yield assertTrue(updatedUser.firstName.map(_.value) == newFirstName.map(_.value)) &&
         assertTrue(updatedUser.lastName.map(_.value) == newLastName.map(_.value))
       }.provide(userServiceLayer),
-      test("updateUser should return None for deactivated user") {
-        for
-          userService <- ZIO.service[UserService]
-          newFirstName = Some(valid(FirstName("New"), "FirstName"))
-          newLastName = Some(valid(LastName("UserUpdated"), "LastName"))
-          user <- userService.updateUser(unsafeUserId(userId3), newFirstName, newLastName).exit
-        yield assertTrue(user.isFailure)
-      }.provide(userServiceLayer),
-      test("updateUser should return None for non-existent user") {
+      test("updateUser should fail for non-existent user") {
         for
           userService <- ZIO.service[UserService]
           newFirstName = Some(valid(FirstName("New"), "FirstName"))
           newLastName = Some(valid(LastName("UserUpdated"), "LastName"))
           user <-
             userService.updateUser(unsafeUserId(nonExistentId), newFirstName, newLastName).exit
-        yield assertTrue(user.isFailure)
+        yield assert(user)(fails(isSubtype[UserNotFoundError](anything)))
       }.provide(userServiceLayer),
       test("changePassword should change password") {
         for

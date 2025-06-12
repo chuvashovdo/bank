@@ -5,7 +5,6 @@ import sttp.model.StatusCode
 import sttp.tapir.*
 import sttp.tapir.json.zio.*
 import sttp.tapir.server.ServerEndpoint
-import java.util.UUID
 
 import common.api.ApiEndpoint
 import common.models.ErrorResponse
@@ -14,7 +13,7 @@ import user.models.UserId
 import jwt.service.JwtService
 import bank.service.AccountService
 import bank.models.dto.{ AccountResponse, CreateAccountRequest }
-import bank.models.Account
+import bank.models.{ Account, AccountId }
 
 class AccountEndpoints(
   accountService: AccountService,
@@ -49,7 +48,7 @@ class AccountEndpoints(
   val getAccountEndpoint: ServerEndpoint[Any, Task] =
     securedEndpoint
       .get
-      .in(accountsPath / path[UUID]("accountId"))
+      .in(accountsPath / path[AccountId]("accountId"))
       .tag("Bank Accounts")
       .summary("Получить информацию о конкретном счете")
       .out(jsonBody[AccountResponse])
@@ -58,7 +57,7 @@ class AccountEndpoints(
   val closeAccountEndpoint: ServerEndpoint[Any, Task] =
     securedEndpoint
       .delete
-      .in(accountsPath / path[UUID]("accountId"))
+      .in(accountsPath / path[AccountId]("accountId"))
       .tag("Bank Accounts")
       .summary("Закрыть банковский счет")
       .out(statusCode(StatusCode.NoContent))
@@ -91,7 +90,7 @@ class AccountEndpoints(
 
   private def handleGetAccount(
     userId: UserId,
-    accountId: UUID,
+    accountId: AccountId,
   ): ZIO[Any, ErrorResponse, AccountResponse] =
     accountService
       .getAccount(accountId, userId)
@@ -100,7 +99,7 @@ class AccountEndpoints(
 
   private def handleCloseAccount(
     userId: UserId,
-    accountId: UUID,
+    accountId: AccountId,
   ): ZIO[Any, ErrorResponse, Unit] =
     accountService
       .closeAccount(accountId, userId)
@@ -112,7 +111,7 @@ class AccountEndpoints(
     AccountResponse(
       id = account.id,
       accountNumber = account.accountNumber,
-      userId = account.userId.value,
+      userId = account.userId,
       balance = account.balance,
       currency = account.currency,
       status = account.accountStatus,
