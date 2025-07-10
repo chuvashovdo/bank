@@ -2,8 +2,8 @@ package jwt.service
 
 import zio.*
 import jwt.config.JwtConfig
-import jwt.models.{ AccessToken, JwtAccessToken, JwtRefreshToken }
-import user.models.UserId
+import jwt.models.{ AccessToken, JwtAccessToken, JwtRefreshToken, AuthTokenClaims, AuthContext }
+import user.models.{ User, UserId }
 import java.time.Instant
 import pdi.jwt.{ JwtAlgorithm, JwtClaim, JwtZIOJson, JwtOptions }
 import jwt.models.RefreshToken
@@ -16,21 +16,31 @@ import jwt.errors.{
   InvalidTokenSubjectFormatError,
   TokenDecodingError,
 }
+import user.service.UserService
+import zio.json.*
 
-class JwtServiceImpl(jwtConfig: JwtConfig, tokenRepository: TokenRepository) extends JwtService:
+class JwtServiceImpl(
+  jwtConfig: JwtConfig,
+  tokenRepository: TokenRepository,
+  userService: UserService,
+) extends JwtService:
   override def createAccessToken(
-    userId: UserId,
+    user: User,
     issuedAt: Instant = Instant.now(),
   ): Task[AccessToken] =
     for
       expiresAt <- ZIO.succeed(issuedAt.plusMillis(jwtConfig.accessTokenExpiration.toMillis))
-      claim =
+      roles = user.roles.map(_.name).toSet
+      permissions = user.roles.flatMap(_.permissions.map(_.name)).toSet
+      authTokenClaims = AuthTokenClaims(roles, permissions)
+      claim: JwtClaim =
         JwtClaim(
           issuer = Some(jwtConfig.issuer),
           audience = Some(Set(jwtConfig.audience)),
-          subject = Some(userId.value.toString),
-          expiration = Some(expiresAt.toEpochMilli),
-          issuedAt = Some(issuedAt.toEpochMilli),
+          subject = Some(user.id.value.toString),
+          expiration = Some(expiresAt.getEpochSecond),
+          issuedAt = Some(issuedAt.getEpochSecond),
+          content = authTokenClaims.toJson,
         )
       tokenString <-
         ZIO.attempt(
@@ -42,13 +52,13 @@ class JwtServiceImpl(jwtConfig: JwtConfig, tokenRepository: TokenRepository) ext
         )
       jwtAccessToken <-
         ZIO
-          .fromEither(JwtAccessToken(tokenString))
+          .fromEither(JwtAccessToken.apply(tokenString))
           .mapError(err =>
             new IllegalArgumentException(
               s"Failed to create JwtAccessToken: ${err.developerFriendlyMessage}"
             )
           )
-    yield AccessToken(jwtAccessToken, expiresAt, userId)
+    yield AccessToken(jwtAccessToken, expiresAt, user.id)
 
   override def createRefreshToken(
     userId: UserId,
@@ -56,13 +66,13 @@ class JwtServiceImpl(jwtConfig: JwtConfig, tokenRepository: TokenRepository) ext
   ): Task[RefreshToken] =
     for
       expiresAt <- ZIO.succeed(issuedAt.plusMillis(jwtConfig.refreshTokenExpiration.toMillis))
-      claim =
+      claim: JwtClaim =
         JwtClaim(
           issuer = Some(jwtConfig.issuer),
           audience = Some(Set(jwtConfig.audience)),
           subject = Some(userId.value.toString),
-          expiration = Some(expiresAt.toEpochMilli),
-          issuedAt = Some(issuedAt.toEpochMilli),
+          expiration = Some(expiresAt.getEpochSecond),
+          issuedAt = Some(issuedAt.getEpochSecond),
         )
       tokenString <-
         ZIO.attempt(
@@ -97,7 +107,7 @@ class JwtServiceImpl(jwtConfig: JwtConfig, tokenRepository: TokenRepository) ext
       _ <- tokenRepository.saveRefreshToken(refreshTokenEntityToSave)
     yield domainRefreshToken
 
-  override def validateToken(token: JwtAccessToken): Task[UserId] =
+  override def validateToken(token: JwtAccessToken): Task[AuthContext] =
     for
       claim <-
         ZIO
@@ -123,22 +133,26 @@ class JwtServiceImpl(jwtConfig: JwtConfig, tokenRepository: TokenRepository) ext
           .attempt(UUID.fromString(subject))
           .map(UserId(_))
           .mapError(err => InvalidTokenSubjectFormatError(subject, err.getMessage))
-    yield userId
+
+      user <- userService.findUserById(userId)
+    yield AuthContext(userId, user.roles, user.roles.flatMap(_.permissions))
 
   override def renewAccessToken(token: JwtRefreshToken): Task[AccessToken] =
     for
       refreshToken <- tokenRepository.findByRefreshToken(token.value)
       _ <- tokenRepository.deleteByRefreshToken(refreshToken.token.value)
-      accessToken <- createAccessToken(refreshToken.userId)
+      user <- userService.findUserById(refreshToken.userId)
+      accessToken <- createAccessToken(user, Instant.now())
     yield accessToken
 
   override def invalidateRefreshTokens(userId: UserId): Task[Unit] =
     tokenRepository.deleteAllByUserId(userId.value)
 
 object JwtServiceImpl:
-  val layer: ZLayer[JwtConfig & TokenRepository, Nothing, JwtService] =
+  val layer: URLayer[JwtConfig & TokenRepository & UserService, JwtService] =
     ZLayer:
       for
         jwtConfig <- ZIO.service[JwtConfig]
         tokenRepository <- ZIO.service[TokenRepository]
-      yield JwtServiceImpl(jwtConfig, tokenRepository)
+        userService <- ZIO.service[UserService]
+      yield JwtServiceImpl(jwtConfig, tokenRepository, userService)

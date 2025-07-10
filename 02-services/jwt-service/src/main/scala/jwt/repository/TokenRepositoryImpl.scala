@@ -14,7 +14,7 @@ class TokenRepositoryImpl(quill: Quill.Postgres[SnakeCase]) extends TokenReposit
   import quill.*
 
   inline given tokenSchemaMeta: SchemaMeta[RefreshTokenEntity] =
-    schemaMeta[RefreshTokenEntity]("refresh_tokens")
+    schemaMeta[RefreshTokenEntity]("app_refresh_tokens")
 
   override def saveRefreshToken(refreshTokenEntity: RefreshTokenEntity): Task[Unit] =
     run(quote {

@@ -9,6 +9,7 @@ final case class User(
   firstName: Option[FirstName],
   lastName: Option[LastName],
   isActive: Boolean,
+  roles: Set[Role],
 )
 
 object User:

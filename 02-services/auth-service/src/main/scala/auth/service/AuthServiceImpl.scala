@@ -13,7 +13,7 @@ final case class AuthServiceImpl(
   override def login(email: Email, password: Password): Task[AccessToken] =
     for
       user <- userService.validateCredentials(email, password)
-      token <- jwtService.createAccessToken(user.id, Instant.now())
+      token <- jwtService.createAccessToken(user, Instant.now())
     yield token
 
   override def register(
@@ -30,7 +30,7 @@ final case class AuthServiceImpl(
           firstName,
           lastName,
         )
-      token <- jwtService.createAccessToken(user.id, Instant.now())
+      token <- jwtService.createAccessToken(user, Instant.now())
     yield token
 
   override def logout(userId: UserId): Task[Unit] =

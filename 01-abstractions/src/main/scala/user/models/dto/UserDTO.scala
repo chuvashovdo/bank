@@ -4,6 +4,8 @@ import user.models.*
 import jwt.models.{ JwtAccessToken, JwtRefreshToken }
 import zio.json.*
 
+// --- Requests ---
+
 final case class RegisterUserRequest(
   email: Email,
   password: Password,
@@ -42,11 +44,14 @@ object ChangePasswordRequest:
   given JsonCodec[ChangePasswordRequest] =
     DeriveJsonCodec.gen[ChangePasswordRequest]
 
+// --- Responses ---
+
 final case class UserResponse(
   id: UserId,
   email: Email,
   firstName: Option[FirstName],
   lastName: Option[LastName],
+  roles: List[RoleResponse], // Добавляем поле ролей
 )
 
 object UserResponse:

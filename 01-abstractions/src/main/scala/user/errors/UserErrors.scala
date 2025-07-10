@@ -34,3 +34,15 @@ final case class InvalidOldPasswordError(userId: UUID) extends UserError:
     "INVALID_OLD_PASSWORD"
   override def message: String =
     s"Invalid old password for user $userId."
+
+final case class PermissionNotFoundError(identifier: UUID | String) extends UserError:
+  override val errorCode: String =
+    "PERMISSION_NOT_FOUND"
+  override def message: String =
+    s"Permission with identifier '$identifier' not found."
+
+final case class RoleNotFoundError(identifier: UUID | String) extends UserError:
+  override val errorCode: String =
+    "ROLE_NOT_FOUND"
+  override def message: String =
+    s"Role with identifier '$identifier' not found."

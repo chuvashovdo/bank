@@ -11,6 +11,11 @@ trait UserRepository:
   def update(user: UserEntity): Task[UserEntity]
   def updatePassword(id: UUID, passwordHash: String): Task[Unit]
   def deactivate(id: UUID): Task[Unit]
+  def findAll(): Task[List[UserEntity]]
+
+  def addRoleToUser(userId: UUID, roleId: UUID): Task[Unit]
+  def removeRoleFromUser(userId: UUID, roleId: UUID): Task[Unit]
+  def findUserRoleIds(userId: UUID): Task[List[UUID]]
 
 object UserRepository:
   def findById(id: UUID): RIO[UserRepository, UserEntity] =
@@ -25,3 +30,12 @@ object UserRepository:
     ZIO.serviceWithZIO[UserRepository](_.updatePassword(id, passwordHash))
   def deactivate(id: UUID): RIO[UserRepository, Unit] =
     ZIO.serviceWithZIO[UserRepository](_.deactivate(id))
+  def findAll(): RIO[UserRepository, List[UserEntity]] =
+    ZIO.serviceWithZIO[UserRepository](_.findAll())
+
+  def addRoleToUser(userId: UUID, roleId: UUID): RIO[UserRepository, Unit] =
+    ZIO.serviceWithZIO[UserRepository](_.addRoleToUser(userId, roleId))
+  def removeRoleFromUser(userId: UUID, roleId: UUID): RIO[UserRepository, Unit] =
+    ZIO.serviceWithZIO[UserRepository](_.removeRoleFromUser(userId, roleId))
+  def findUserRoleIds(userId: UUID): RIO[UserRepository, List[UUID]] =
+    ZIO.serviceWithZIO[UserRepository](_.findUserRoleIds(userId))
