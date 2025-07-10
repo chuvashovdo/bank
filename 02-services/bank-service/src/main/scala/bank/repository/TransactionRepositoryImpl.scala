@@ -18,7 +18,7 @@ class TransactionRepositoryImpl(quill: Quill.Postgres[SnakeCase]) extends Transa
   @nowarn("msg=unused")
   inline private given transactionSchemaMeta: SchemaMeta[TransactionEntity] =
     schemaMeta(
-      "transactions",
+      "app_transactions",
       _.id -> "id",
       _.sourceAccountId -> "source_account_id",
       _.destinationAccountId -> "destination_account_id",

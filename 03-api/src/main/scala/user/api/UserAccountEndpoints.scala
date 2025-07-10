@@ -13,7 +13,7 @@ import user.service.*
 import jwt.service.JwtService
 import zio.*
 import common.api.ApiEndpoint
-
+import user.mapper.UserMapper
 /** Объект-компаньон для хранения констант путей */
 object UserAccountEndpoints:
   private val profilePath =
@@ -27,7 +27,7 @@ class UserAccountEndpoints(
   authService: AuthService,
   jwtService: JwtService,
 ) extends ApiEndpoint:
-  import UserAccountEndpoints.* // Импортируем пути из объекта-компаньона
+  import UserAccountEndpoints.*
 
   private val securedEndpoint =
     createSecuredEndpoint(jwtService)
@@ -39,7 +39,8 @@ class UserAccountEndpoints(
       .tag("User Account")
       .summary("Получение информации о текущем аутентифицированном пользователе")
       .out(jsonBody[UserResponse])
-      .serverLogic { userId => _ =>
+      .serverLogic { authContext => _ =>
+        val userId = authContext.userId
         handleGetCurrentUser(userId).either
       }
 
@@ -51,7 +52,8 @@ class UserAccountEndpoints(
       .summary("Обновление информации о текущем пользователе (имя, фамилия)")
       .in(jsonBody[UpdateUserRequest])
       .out(jsonBody[UserResponse])
-      .serverLogic { userId => request =>
+      .serverLogic { authContext => request =>
+        val userId = authContext.userId
         handleUpdateUser(userId, request).either
       }
 
@@ -63,7 +65,8 @@ class UserAccountEndpoints(
       .summary("Изменение пароля текущего пользователя")
       .in(jsonBody[ChangePasswordRequest])
       .out(statusCode(StatusCode.NoContent))
-      .serverLogic { userId => request =>
+      .serverLogic { authContext => request =>
+        val userId = authContext.userId
         handleChangePassword(userId, request).either
       }
 
@@ -74,7 +77,8 @@ class UserAccountEndpoints(
       .tag("User Account")
       .summary("Деактивация учетной записи текущего пользователя")
       .out(statusCode(StatusCode.NoContent))
-      .serverLogic { userId => _ =>
+      .serverLogic { authContext => _ =>
+        val userId = authContext.userId
         handleDeactivateAccount(userId).either
       }
 
@@ -86,8 +90,6 @@ class UserAccountEndpoints(
       deactivateAccountEndpoint,
     )
 
-  // --- Private handler methods for endpoint logic ---
-
   private def findAndMapUserToResponse(
     userId: UserId,
     path: String,
@@ -95,7 +97,9 @@ class UserAccountEndpoints(
     userService
       .findUserById(userId)
       .mapError(handleCommonErrors(path))
-      .map(user => UserResponse(user.id, user.email, user.firstName, user.lastName))
+      .map { user =>
+        UserMapper.toResponseFromModel(user)
+      }
 
   private def handleGetCurrentUser(userId: UserId): ZIO[Any, ErrorResponse, UserResponse] =
     findAndMapUserToResponse(userId, profilePath)

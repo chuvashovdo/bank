@@ -13,6 +13,13 @@ import user.models.dto.{
   RegisterUserRequest,
   UpdateUserRequest,
   UserResponse,
+  CreateRoleRequest,
+  UpdateRoleRequest,
+  RoleResponse,
+  PermissionResponse,
+  CreatePermissionRequest,
+  UpdatePermissionRequest,
+  UpdateUserAdminRequest,
 }
 import bank.models.Balance
 import bank.models.AccountStatus
@@ -59,6 +66,26 @@ object TapirSchemas:
     JsonDecoder.string.mapOrFail { str =>
       try Right(UserId(java.util.UUID.fromString(str)))
       catch case _: IllegalArgumentException => Left("Invalid UUID format for UserId")
+    }
+
+  given schemaRoleId: Schema[RoleId] =
+    Schema(SchemaType.SString(), format = Some("role_id"))
+  given encoderRoleId: JsonEncoder[RoleId] =
+    JsonEncoder.string.contramap(_.value.toString)
+  given decoderRoleId: JsonDecoder[RoleId] =
+    JsonDecoder.string.mapOrFail { str =>
+      try Right(RoleId(java.util.UUID.fromString(str)))
+      catch case _: IllegalArgumentException => Left("Invalid UUID format for RoleId")
+    }
+
+  given schemaPermissionId: Schema[PermissionId] =
+    Schema(SchemaType.SString(), format = Some("permission_id"))
+  given encoderPermissionId: JsonEncoder[PermissionId] =
+    JsonEncoder.string.contramap(_.value.toString)
+  given decoderPermissionId: JsonDecoder[PermissionId] =
+    JsonDecoder.string.mapOrFail { str =>
+      try Right(PermissionId(java.util.UUID.fromString(str)))
+      catch case _: IllegalArgumentException => Left("Invalid UUID format for PermissionId")
     }
 
   given schemaJwtAccessToken: Schema[JwtAccessToken] =
@@ -108,10 +135,27 @@ object TapirSchemas:
   given schemaRefreshTokenRequest: Schema[RefreshTokenRequest] =
     Schema.derived[RefreshTokenRequest]
 
+  given schemaCreateRoleRequest: Schema[CreateRoleRequest] =
+    Schema.derived
+  given schemaUpdateRoleRequest: Schema[UpdateRoleRequest] =
+    Schema.derived
+  given schemaRoleResponse: Schema[RoleResponse] =
+    Schema.derived
+  given schemaCreatePermissionRequest: Schema[CreatePermissionRequest] =
+    Schema.derived
+  given schemaUpdatePermissionRequest: Schema[UpdatePermissionRequest] =
+    Schema.derived
+  given schemaPermissionResponse: Schema[PermissionResponse] =
+    Schema.derived
+  given schemaUpdateUserAdminRequest: Schema[UpdateUserAdminRequest] =
+    Schema.derived
+
   // --- Bank DTOs ---
 
   given schemaCreateAccountRequest: Schema[CreateAccountRequest] =
     Schema.derived[CreateAccountRequest]
+  given schemaUpdateAccountStatusRequest: Schema[UpdateAccountStatusRequest] =
+    Schema.derived[UpdateAccountStatusRequest]
   given schemaAccountResponse: Schema[AccountResponse] =
     Schema.derived[AccountResponse]
   given schemaTransactionRequest: Schema[TransactionRequest] =
@@ -150,3 +194,8 @@ object TapirSchemas:
     Codec.uuid.map(AccountId.apply)(_.value)
   given Codec[String, TransactionId, CodecFormat.TextPlain] =
     Codec.uuid.map(TransactionId.apply)(_.value)
+
+  given Codec[String, RoleId, CodecFormat.TextPlain] =
+    Codec.uuid.map(RoleId.apply)(_.value)
+  given Codec[String, PermissionId, CodecFormat.TextPlain] =
+    Codec.uuid.map(PermissionId.apply)(_.value)

@@ -5,9 +5,10 @@ import bank.models.{ Account, Balance }
 import bank.entity.AccountEntity
 import user.models.UserId
 import bank.models.AccountId
+import bank.models.dto.AccountResponse
 
 object AccountMapper:
-  def toModel(entity: AccountEntity): Task[Account] =
+  def toModelFromEntity(entity: AccountEntity): Task[Account] =
     for balance <- ZIO.fromEither(Balance(entity.balance))
     yield Account(
       id = AccountId(entity.id),
@@ -20,7 +21,7 @@ object AccountMapper:
       updatedAt = entity.updatedAt,
     )
 
-  def toEntity(model: Account): AccountEntity =
+  def toEntityFromModel(model: Account): AccountEntity =
     AccountEntity(
       id = model.id.value,
       userId = model.userId.value,
@@ -30,4 +31,14 @@ object AccountMapper:
       accountStatus = model.accountStatus,
       createdAt = model.createdAt,
       updatedAt = model.updatedAt,
+    )
+
+  def toResponseFromModel(model: Account): AccountResponse =
+    AccountResponse(
+      id = model.id,
+      accountNumber = model.accountNumber,
+      userId = model.userId,
+      balance = model.balance,
+      currency = model.currency,
+      status = model.accountStatus,
     )

@@ -21,20 +21,28 @@ class AccountEndpoints(
 ) extends ApiEndpoint:
   private val accountsPath =
     "api" / "accounts"
+
   private val securedEndpoint =
     createSecuredEndpoint(jwtService)
 
-  // --- Endpoints Definition ---
+  private val adminEndpoint =
+    createSecuredEndpointWithRoles(jwtService, "ADMIN")
+
+  private val createAccountsEndpoint =
+    createSecuredEndpointWithPermissions(jwtService, "accounts:create")
 
   val createAccountEndpoint: ServerEndpoint[Any, Task] =
-    securedEndpoint
+    createAccountsEndpoint
       .post
       .in(accountsPath)
       .tag("Bank Accounts")
       .summary("Создать новый банковский счет")
       .in(jsonBody[CreateAccountRequest])
       .out(jsonBody[AccountResponse])
-      .serverLogic(userId => request => handleCreateAccount(userId, request).either)
+      .serverLogic { authContext => request =>
+        val userId = authContext.userId
+        handleCreateAccount(userId, request).either
+      }
 
   val listAccountsEndpoint: ServerEndpoint[Any, Task] =
     securedEndpoint
@@ -43,7 +51,10 @@ class AccountEndpoints(
       .tag("Bank Accounts")
       .summary("Получить список счетов пользователя")
       .out(jsonBody[List[AccountResponse]])
-      .serverLogic(userId => _ => handleListAccounts(userId).either)
+      .serverLogic { authContext => _ =>
+        val userId = authContext.userId
+        handleListAccounts(userId).either
+      }
 
   val getAccountEndpoint: ServerEndpoint[Any, Task] =
     securedEndpoint
@@ -52,16 +63,44 @@ class AccountEndpoints(
       .tag("Bank Accounts")
       .summary("Получить информацию о конкретном счете")
       .out(jsonBody[AccountResponse])
-      .serverLogic(userId => accountId => handleGetAccount(userId, accountId).either)
+      .serverLogic { authContext => accountId =>
+        ZIO
+          .fromEither(
+            checkPermissions(authContext, s"${accountsPath.toString()}/$accountId", "accounts:read")
+          )
+          .flatMap { _ =>
+            val userId = authContext.userId
+            handleGetAccount(userId, accountId)
+          }
+          .either
+      }
 
   val closeAccountEndpoint: ServerEndpoint[Any, Task] =
-    securedEndpoint
+    adminEndpoint
       .delete
       .in(accountsPath / path[AccountId]("accountId"))
       .tag("Bank Accounts")
-      .summary("Закрыть банковский счет")
+      .summary("Закрыть банковский счет (только для администратора)")
       .out(statusCode(StatusCode.NoContent))
-      .serverLogic(userId => accountId => handleCloseAccount(userId, accountId).either)
+      .serverLogic { authContext => accountId =>
+        val userId = authContext.userId
+        handleCloseAccount(userId, accountId).either
+      }
+
+  val adminAccountsEndpoint: ServerEndpoint[Any, Task] =
+    adminEndpoint
+      .get
+      .in("api" / "admin" / "accounts")
+      .tag("Admin Bank Accounts")
+      .summary("Управление счетами (только для администратора)")
+      .out(jsonBody[List[AccountResponse]])
+      .serverLogic { authContext => _ =>
+        val userId = authContext.userId
+
+        handleListAccounts(userId).map { accounts =>
+          accounts
+        }.either
+      }
 
   val all: List[ServerEndpoint[Any, Task]] =
     List(
@@ -69,9 +108,8 @@ class AccountEndpoints(
       listAccountsEndpoint,
       getAccountEndpoint,
       closeAccountEndpoint,
+      adminAccountsEndpoint,
     )
-
-  // --- Handlers ---
 
   private def handleCreateAccount(
     userId: UserId,
@@ -104,8 +142,6 @@ class AccountEndpoints(
     accountService
       .closeAccount(accountId, userId)
       .mapError(handleCommonErrors(s"${accountsPath.toString()}/$accountId"))
-
-  // --- Mappers ---
 
   private def accountToResponse(account: Account): AccountResponse =
     AccountResponse(

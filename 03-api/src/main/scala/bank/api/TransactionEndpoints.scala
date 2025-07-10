@@ -10,16 +10,16 @@ import scala.math.BigDecimal
 import common.api.ApiEndpoint
 import common.models.ErrorResponse
 import common.TapirSchemas.given
-import user.models.UserId
 import jwt.service.JwtService
 import bank.service.TransactionService
 import bank.models.dto.{
-  // TransactionRequest,
+  TransactionRequest,
   TransactionResponse,
   TransferRequest,
   TransferByAccountRequest,
 }
 import bank.models.{ AccountId, Transaction, TransactionId }
+import user.models.UserId
 
 class TransactionEndpoints(
   transactionService: TransactionService,
@@ -29,13 +29,20 @@ class TransactionEndpoints(
     "api" / "transactions"
   private val accountsBasePath =
     "api" / "accounts" / path[AccountId]("accountId")
-  private val securedEndpoint =
-    createSecuredEndpoint(jwtService)
+  private val adminAccountsBasePath =
+    "api" / "admin" / "accounts" / path[AccountId]("accountId")
 
-  // --- Endpoints Definition ---
+  private val readTransactionsEndpoint =
+    createSecuredEndpointWithPermissions(jwtService, "transactions:read")
+  private val depositEndpointSecured =
+    createSecuredEndpointWithPermissions(jwtService, "admin:transactions:deposit")
+  private val withdrawEndpointSecured =
+    createSecuredEndpointWithPermissions(jwtService, "admin:transactions:withdraw")
+  private val transferEndpointSecured =
+    createSecuredEndpointWithPermissions(jwtService, "transactions:create")
 
   val getTransactionsEndpoint: ServerEndpoint[Any, Task] =
-    securedEndpoint
+    readTransactionsEndpoint
       .get
       .in(accountsBasePath / "transactions")
       .in(query[Int]("limit").default(20))
@@ -47,7 +54,7 @@ class TransactionEndpoints(
       .tag("Bank Transactions")
       .summary("Получить историю транзакций по счету")
       .out(jsonBody[List[TransactionResponse]])
-      .serverLogic { userId =>
+      .serverLogic { authContext =>
         {
           case (
                  accountId: AccountId,
@@ -58,6 +65,7 @@ class TransactionEndpoints(
                  startDate: Option[Instant],
                  endDate: Option[Instant],
                ) =>
+            val userId = authContext.userId
             handleGetTransactions(
               userId,
               accountId,
@@ -72,74 +80,77 @@ class TransactionEndpoints(
       }
 
   val getTransactionByIdEndpoint: ServerEndpoint[Any, Task] =
-    securedEndpoint
+    readTransactionsEndpoint
       .get
       .in(transactionsBasePath / path[TransactionId]("transactionId"))
       .tag("Bank Transactions")
       .summary("Получить информацию о конкретной транзакции")
       .out(jsonBody[TransactionResponse])
-      .serverLogic { userId => transactionId =>
+      .serverLogic { authContext => transactionId =>
+        val userId = authContext.userId
         handleGetTransactionById(userId, transactionId).either
       }
 
-  /*
   val depositEndpoint: ServerEndpoint[Any, Task] =
-    securedEndpoint
+    depositEndpointSecured
       .post
-      .in(accountsBasePath / "deposit")
-      .tag("Bank Transactions")
-      .summary("Пополнить счет")
+      .in(adminAccountsBasePath / "deposit")
+      .tag("Admin Bank Transactions")
+      .summary("Пополнить счет (только для администратора)")
       .in(jsonBody[TransactionRequest])
       .out(jsonBody[TransactionResponse])
-      .serverLogic { userId =>
+      .serverLogic { authContext =>
         {
           case (accountId: AccountId, request: TransactionRequest) =>
+            val userId = authContext.userId
             handleDeposit(userId, accountId, request).either
         }
       }
 
   val withdrawEndpoint: ServerEndpoint[Any, Task] =
-    securedEndpoint
+    withdrawEndpointSecured
       .post
-      .in(accountsBasePath / "withdraw")
-      .tag("Bank Transactions")
-      .summary("Снять средства со счета")
+      .in(adminAccountsBasePath / "withdraw")
+      .tag("Admin Bank Transactions")
+      .summary("Снять средства со счета (только для администратора)")
       .in(jsonBody[TransactionRequest])
       .out(jsonBody[TransactionResponse])
-      .serverLogic { userId =>
+      .serverLogic { authContext =>
         {
           case (accountId: AccountId, request: TransactionRequest) =>
+            val userId = authContext.userId
             handleWithdraw(userId, accountId, request).either
         }
       }
-   */
 
   val transferEndpoint: ServerEndpoint[Any, Task] =
-    securedEndpoint
+    transferEndpointSecured
       .post
       .in(accountsBasePath / "transfer")
       .tag("Bank Transactions")
       .summary("Перевести средства на другой счет")
       .in(jsonBody[TransferRequest])
       .out(jsonBody[TransactionResponse])
-      .serverLogic { userId =>
+      .serverLogic { authContext =>
         {
           case (sourceAccountId: AccountId, request: TransferRequest) =>
+            val userId = authContext.userId
             handleTransfer(userId, sourceAccountId, request).either
         }
       }
 
   val transferByAccountEndpoint: ServerEndpoint[Any, Task] =
-    securedEndpoint
+    transferEndpointSecured
       .post
       .in(accountsBasePath / "transfer-by-account")
       .tag("Bank Transactions")
       .summary("Перевести средства на другой счет по номеру счета")
       .in(jsonBody[TransferByAccountRequest])
       .out(jsonBody[TransactionResponse])
-      .serverLogic { userId =>
+      .serverLogic { authContext =>
         {
           case (sourceAccountId: AccountId, request: TransferByAccountRequest) =>
+            val userId = authContext.userId
             handleTransferByAccount(userId, sourceAccountId, request).either
         }
       }
@@ -148,13 +159,11 @@ class TransactionEndpoints(
     List(
       getTransactionsEndpoint,
       getTransactionByIdEndpoint,
-      // depositEndpoint,
-      // withdrawEndpoint,
+      depositEndpoint,
+      withdrawEndpoint,
       transferEndpoint,
       transferByAccountEndpoint,
     )
-
-  // --- Handlers ---
 
   private def handleGetTransactions(
     userId: UserId,
@@ -189,7 +198,6 @@ class TransactionEndpoints(
       .map(transactionToResponse)
       .mapError(handleCommonErrors(s"api/transactions/$transactionId"))
 
-  /*
   private def handleDeposit(
     userId: UserId,
     accountId: AccountId,
@@ -209,7 +217,6 @@ class TransactionEndpoints(
       .withdraw(accountId, request.amount, request.memo, userId)
       .map(transactionToResponse)
       .mapError(handleCommonErrors(s"api/accounts/$accountId/withdraw"))
-   */
 
   private def handleTransfer(
     userId: UserId,
@@ -242,8 +249,6 @@ class TransactionEndpoints(
       )
       .map(transactionToResponse)
       .mapError(handleCommonErrors(s"api/accounts/$sourceAccountId/transfer-by-account"))
-
-  // --- Mappers ---
 
   private def transactionToResponse(transaction: Transaction): TransactionResponse =
     TransactionResponse(

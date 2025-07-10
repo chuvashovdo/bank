@@ -21,7 +21,7 @@ class TransactionServiceImpl(
   private def getAndAuthorizeAccount(accountId: AccountId, userId: UserId): Task[Account] =
     for
       accountEntity <- accountRepository.findById(accountId.value)
-      account <- AccountMapper.toModel(accountEntity)
+      account <- AccountMapper.toModelFromEntity(accountEntity)
       _ <-
         ZIO.when(!account.userId.equals(userId))(
           ZIO.fail(UnauthorizedAccountAccessError(userId.value, accountId.value))
@@ -43,7 +43,7 @@ class TransactionServiceImpl(
           )
         sourceAccount <- getAndAuthorizeAccount(sourceAccountId, userId)
         destinationAccountEntity <- accountRepository.findById(destinationAccountId.value)
-        destinationAccount <- AccountMapper.toModel(destinationAccountEntity)
+        destinationAccount <- AccountMapper.toModelFromEntity(destinationAccountEntity)
         _ <-
           ZIO.unless(sourceAccount.accountStatus == AccountStatus.OPEN)(
             ZIO.fail(AccountClosedError(sourceAccountId.value))
@@ -62,7 +62,7 @@ class TransactionServiceImpl(
               InsufficientFundsError(sourceAccountId.value, amount, sourceAccount.balance.value)
             )
           )
-        now <- Clock.instant
+        now <- ZIO.succeed(Instant.now())
         newSourceBalance = sourceAccount.balance.value - amount
         newDestinationBalance = destinationAccount.balance.value + amount
         _ <- accountRepository.updateBalance(sourceAccountId.value, newSourceBalance)
@@ -78,7 +78,7 @@ class TransactionServiceImpl(
             createdAt = now,
           )
         createdEntity <- transactionRepository.create(transactionEntity)
-        createdTransaction <- TransactionMapper.toModel(createdEntity)
+        createdTransaction <- TransactionMapper.toModelFromEntity(createdEntity)
       yield createdTransaction
 
   override def performTransferByAccountNumber(
@@ -90,7 +90,7 @@ class TransactionServiceImpl(
   ): Task[Transaction] =
     for
       destinationAccountEntity <- accountRepository.findByAccountNumber(destinationAccountNumber)
-      destinationAccount <- AccountMapper.toModel(destinationAccountEntity)
+      destinationAccount <- AccountMapper.toModelFromEntity(destinationAccountEntity)
       transaction <- performTransfer(sourceAccountId, destinationAccount.id, amount, memo, userId)
     yield transaction
 
@@ -107,7 +107,7 @@ class TransactionServiceImpl(
           ZIO.unless(account.accountStatus == AccountStatus.OPEN)(
             ZIO.fail(AccountClosedError(accountId.value))
           )
-        now <- Clock.instant
+        now <- ZIO.succeed(Instant.now())
         newBalance = account.balance.value + amount
         _ <- accountRepository.updateBalance(accountId.value, newBalance)
         transactionEntity =
@@ -121,7 +121,7 @@ class TransactionServiceImpl(
             createdAt = now,
           )
         createdEntity <- transactionRepository.create(transactionEntity)
-        createdTransaction <- TransactionMapper.toModel(createdEntity)
+        createdTransaction <- TransactionMapper.toModelFromEntity(createdEntity)
       yield createdTransaction
 
   override def withdraw(
@@ -141,7 +141,7 @@ class TransactionServiceImpl(
           ZIO.when(account.balance.value < amount)(
             ZIO.fail(InsufficientFundsError(accountId.value, amount, account.balance.value))
           )
-        now <- Clock.instant
+        now <- ZIO.succeed(Instant.now())
         newBalance = account.balance.value - amount
         _ <- accountRepository.updateBalance(accountId.value, newBalance)
         transactionEntity =
@@ -155,7 +155,7 @@ class TransactionServiceImpl(
             createdAt = now,
           )
         createdEntity <- transactionRepository.create(transactionEntity)
-        createdTransaction <- TransactionMapper.toModel(createdEntity)
+        createdTransaction <- TransactionMapper.toModelFromEntity(createdEntity)
       yield createdTransaction
 
   override def getAccountTransactions(
@@ -180,7 +180,7 @@ class TransactionServiceImpl(
           startDate,
           endDate,
         )
-      transactions <- ZIO.foreach(transactionEntities)(TransactionMapper.toModel)
+      transactions <- ZIO.foreach(transactionEntities)(TransactionMapper.toModelFromEntity)
     yield transactions
 
   override def getTransactionById(id: TransactionId, userId: UserId): Task[Transaction] =
@@ -192,7 +192,7 @@ class TransactionServiceImpl(
         sourceAccountOpt.exists(_.userId.equals(userId.value)) ||
         destAccountOpt.exists(_.userId.equals(userId.value))
       _ <- ZIO.unless(userHasAccess)(ZIO.fail(TransactionNotFoundError(id.value)))
-      transaction <- TransactionMapper.toModel(txEntity)
+      transaction <- TransactionMapper.toModelFromEntity(txEntity)
     yield transaction
 
 object TransactionServiceImpl:

@@ -7,7 +7,7 @@ import bank.models.TransactionId
 import bank.models.AccountId
 
 object TransactionMapper:
-  def toModel(entity: TransactionEntity): Task[Transaction] =
+  def toModelFromEntity(entity: TransactionEntity): Task[Transaction] =
     ZIO.succeed:
       Transaction(
         id = TransactionId(entity.id),
@@ -19,7 +19,7 @@ object TransactionMapper:
         createdAt = entity.createdAt,
       )
 
-  def toEntity(model: Transaction): TransactionEntity =
+  def toEntityFromModel(model: Transaction): TransactionEntity =
     TransactionEntity(
       id = model.id.value,
       sourceAccountId = model.sourceAccountId.map(_.value),

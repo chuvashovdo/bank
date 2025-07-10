@@ -7,8 +7,6 @@ import java.util.UUID
 import scala.math.BigDecimal
 import scala.annotation.nowarn
 import java.sql.Types
-import scala.CanEqual.derived
-
 import bank.entity.AccountEntity
 import bank.errors.*
 import bank.models.AccountStatus
@@ -16,13 +14,10 @@ import bank.models.AccountStatus
 class AccountRepositoryImpl(quill: Quill.Postgres[SnakeCase]) extends AccountRepository:
   import quill.*
 
-  given CanEqual[UUID, UUID] =
-    derived
-
   @nowarn("msg=unused")
   inline private given accountSchemaMeta: SchemaMeta[AccountEntity] =
     schemaMeta(
-      "accounts",
+      "app_accounts",
       _.id -> "id",
       _.userId -> "user_id",
       _.accountNumber -> "account_number",
@@ -68,6 +63,9 @@ class AccountRepositoryImpl(quill: Quill.Postgres[SnakeCase]) extends AccountRep
 
   override def findByUserId(userId: UUID): Task[List[AccountEntity]] =
     run(quote(query[AccountEntity].filter(_.userId.equals(lift(userId)))))
+
+  override def findAll(): Task[List[AccountEntity]] =
+    run(quote(query[AccountEntity]))
 
   override def updateStatus(id: UUID, newStatus: AccountStatus): Task[Unit] =
     run(quote {

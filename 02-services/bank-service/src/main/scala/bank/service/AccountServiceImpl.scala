@@ -33,7 +33,7 @@ private class AccountServiceImpl(
             updatedAt = now,
           )
         createdEntity <- accountRepository.create(accountEntity)
-        createdAccount <- AccountMapper.toModel(createdEntity)
+        createdAccount <- AccountMapper.toModelFromEntity(createdEntity)
       yield createdAccount
 
     createAttempt.refineToOrDie[SQLException].retry(Schedule.recurs(5)).orDie
@@ -41,14 +41,16 @@ private class AccountServiceImpl(
   override def getAccount(accountId: AccountId, userId: UserId): Task[Account] =
     for
       accountEntity <- accountRepository.findById(accountId.value)
-      account <- AccountMapper.toModel(accountEntity)
+      account <- AccountMapper.toModelFromEntity(accountEntity)
       _ <-
         ZIO.when(!account.userId.equals(userId)):
           ZIO.fail(UnauthorizedAccountAccessError(userId.value, accountId.value))
     yield account
 
   override def listAccountsForUser(userId: UserId): Task[List[Account]] =
-    accountRepository.findByUserId(userId.value).flatMap(ZIO.foreach(_)(AccountMapper.toModel))
+    accountRepository
+      .findByUserId(userId.value)
+      .flatMap(ZIO.foreach(_)(AccountMapper.toModelFromEntity))
 
   override def closeAccount(accountId: AccountId, userId: UserId): Task[Unit] =
     for
@@ -60,6 +62,26 @@ private class AccountServiceImpl(
           )
       _ <- accountRepository.updateStatus(accountId.value, AccountStatus.CLOSED)
     yield ()
+
+  override def findAllAccounts(): Task[List[Account]] =
+    accountRepository.findAll().flatMap(ZIO.foreach(_)(AccountMapper.toModelFromEntity))
+
+  override def getAccountById(accountId: AccountId): Task[Account] =
+    accountRepository.findById(accountId.value).flatMap(AccountMapper.toModelFromEntity)
+
+  override def getAccountsByUserId(userId: UserId): Task[List[Account]] =
+    accountRepository
+      .findByUserId(userId.value)
+      .flatMap(ZIO.foreach(_)(AccountMapper.toModelFromEntity))
+
+  override def getAccountByNumber(accountNumber: String): Task[Account] =
+    accountRepository.findByAccountNumber(accountNumber).flatMap(AccountMapper.toModelFromEntity)
+
+  override def updateAccountStatus(accountId: AccountId, newStatus: AccountStatus): Task[Unit] =
+    accountRepository.updateStatus(accountId.value, newStatus)
+
+  override def deleteAccount(accountId: AccountId): Task[Unit] =
+    accountRepository.delete(accountId.value)
 
 object AccountServiceImpl:
   val layer: ZLayer[AccountRepository & AccountNumberGenerator, Nothing, AccountService] =

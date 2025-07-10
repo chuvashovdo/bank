@@ -13,6 +13,8 @@ class UserApi(
   authService: AuthService,
   jwtService: JwtService,
   userService: UserService,
+  roleService: RoleService,
+  permissionService: PermissionService,
 ):
   private val authEndpoints =
     new AuthEndpoints(
@@ -28,8 +30,24 @@ class UserApi(
       jwtService,
     )
 
+  private val rolePermissionEndpoints =
+    new RolePermissionEndpoints(
+      roleService,
+      permissionService,
+      jwtService,
+    )
+
+  private val userAdminEndpoints =
+    new UserAdminEndpoints(
+      userService,
+      jwtService,
+    )
+
   val apiEndpoints: List[ServerEndpoint[Any, Task]] =
-    authEndpoints.all ++ userAccountEndpoints.all
+    authEndpoints.all ++
+      userAccountEndpoints.all ++
+      rolePermissionEndpoints.all ++
+      userAdminEndpoints.all
 
   val swaggerEndpoints: List[ServerEndpoint[Any, Task]] =
     SwaggerInterpreter()
@@ -46,10 +64,12 @@ class UserApi(
     ZioHttpInterpreter().toHttp(allEndpoints)
 
 object UserApi:
-  val layer: URLayer[AuthService & JwtService & UserService, UserApi] =
+  val layer: URLayer[AuthService & JwtService & UserService & RoleService & PermissionService, UserApi] =
     ZLayer:
       for
         authService <- ZIO.service[AuthService]
         jwtService <- ZIO.service[JwtService]
         userService <- ZIO.service[UserService]
-      yield new UserApi(authService, jwtService, userService)
+        roleService <- ZIO.service[RoleService]
+        permissionService <- ZIO.service[PermissionService]
+      yield new UserApi(authService, jwtService, userService, roleService, permissionService)

@@ -20,7 +20,7 @@ import zio.*
 import java.time.Instant
 import sttp.tapir.server.ServerEndpoint
 import common.api.ApiEndpoint
-
+import user.mapper.UserMapper
 /** Объект-компаньон для хранения констант путей */
 object AuthEndpoints:
   private val registerPath =
@@ -38,7 +38,7 @@ class AuthEndpoints(
   jwtService: JwtService,
   userService: UserService,
 ) extends ApiEndpoint:
-  import AuthEndpoints.* // Импортируем пути из объекта-компаньона
+  import AuthEndpoints.*
 
   private val securedEndpoint =
     createSecuredEndpoint(jwtService)
@@ -86,7 +86,9 @@ class AuthEndpoints(
       .tag("Auth")
       .summary("Выход пользователя из системы (удаление сессии/токена)")
       .out(statusCode(StatusCode.NoContent))
-      .serverLogic { userId => _ =>
+      .serverLogic { authContext => _ =>
+
+        val userId = authContext.userId
         handleLogout(userId)
           .map(_ => Right(()))
           .catchAll(err => ZIO.succeed(Left(err)))
@@ -100,8 +102,6 @@ class AuthEndpoints(
       logoutEndpoint,
     )
 
-  // --- Private handler methods for endpoint logic ---
-
   private def findAndMapUserToResponse(
     userId: UserId,
     path: String,
@@ -109,7 +109,9 @@ class AuthEndpoints(
     userService
       .findUserById(userId)
       .mapError(handleCommonErrors(path))
-      .map(user => UserResponse(user.id, user.email, user.firstName, user.lastName))
+      .map { user =>
+        UserMapper.toResponseFromModel(user)
+      }
 
   private def handleRegister(request: RegisterUserRequest): ZIO[Any, ErrorResponse, AuthResponse] =
     for

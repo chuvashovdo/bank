@@ -11,6 +11,7 @@ trait AccountRepository:
   def findById(id: UUID): Task[AccountEntity]
   def findByAccountNumber(accountNumber: String): Task[AccountEntity]
   def findByUserId(userId: UUID): Task[List[AccountEntity]]
+  def findAll(): Task[List[AccountEntity]]
   def updateBalance(id: UUID, newBalance: BigDecimal): Task[Unit]
   def updateStatus(id: UUID, newStatus: AccountStatus): Task[Unit]
   def delete(id: UUID): Task[Unit]
@@ -28,6 +29,9 @@ object AccountRepository:
 
   def findByUserId(userId: UUID): RIO[AccountRepository, List[AccountEntity]] =
     ZIO.serviceWithZIO[AccountRepository](_.findByUserId(userId))
+
+  def findAll(): RIO[AccountRepository, List[AccountEntity]] =
+    ZIO.serviceWithZIO[AccountRepository](_.findAll())
 
   def updateBalance(id: UUID, newBalance: BigDecimal): RIO[AccountRepository, Unit] =
     ZIO.serviceWithZIO[AccountRepository](_.updateBalance(id, newBalance))

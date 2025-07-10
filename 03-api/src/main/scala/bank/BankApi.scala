@@ -23,8 +23,14 @@ class BankApi(
       jwtService,
     )
 
+  private val accountAdminEndpoints =
+    new AccountAdminEndpoints(
+      accountService,
+      jwtService,
+    )
+
   val allEndpoints: List[ServerEndpoint[Any, Task]] =
-    accountEndpoints.all ++ transactionEndpoints.all
+    accountEndpoints.all ++ transactionEndpoints.all ++ accountAdminEndpoints.all
 
 object BankApi:
   val layer: ZLayer[AccountService & TransactionService & JwtService, Nothing, BankApi] =

@@ -12,6 +12,12 @@ object CreateAccountRequest:
   given codec: JsonCodec[CreateAccountRequest] =
     DeriveJsonCodec.gen
 
+case class UpdateAccountStatusRequest(status: AccountStatus)
+
+object UpdateAccountStatusRequest:
+  given codec: JsonCodec[UpdateAccountStatusRequest] =
+    DeriveJsonCodec.gen
+
 // --- Responses ---
 
 case class AccountResponse(
