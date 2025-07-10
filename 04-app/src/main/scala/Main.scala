@@ -10,8 +10,15 @@ import common.service.TransactorImpl
 import jwt.config.JwtConfigImpl
 import jwt.repository.TokenRepositoryImpl
 import jwt.service.{ JwtService, JwtServiceImpl }
-import user.repository.UserRepositoryImpl
-import user.service.UserServiceImpl
+import user.repository.{ UserRepositoryImpl, PermissionRepositoryImpl, RoleRepositoryImpl }
+import user.service.{
+  UserService,
+  UserServiceImpl,
+  PermissionService,
+  PermissionServiceImpl,
+  RoleService,
+  RoleServiceImpl,
+}
 import auth.service.AuthServiceImpl
 import bank.repository.{ AccountRepositoryImpl, TransactionRepositoryImpl }
 import bank.service.*
@@ -53,6 +60,10 @@ object Main extends ZIOAppDefault:
     quillLayer >>> AccountRepositoryImpl.layer
   private val transactionRepoLayer =
     quillLayer >>> TransactionRepositoryImpl.layer
+  private val permissionRepoLayer =
+    quillLayer >>> PermissionRepositoryImpl.layer
+  private val roleRepoLayer =
+    quillLayer >>> RoleRepositoryImpl.layer
 
   // --- SERVICE LAYERS ---
   private val accountNumberGeneratorLayer =
@@ -60,20 +71,30 @@ object Main extends ZIOAppDefault:
   private val transactorLayer =
     quillLayer >>> TransactorImpl.layer
 
-  private val jwtServiceLayer =
-    (jwtConfigLayer ++ tokenRepoLayer) >>> JwtServiceImpl.layer
+  private val permissionServiceLayer =
+    permissionRepoLayer >>> PermissionServiceImpl.layer
+
+  private val roleServiceLayer =
+    (roleRepoLayer ++ permissionRepoLayer) >>> RoleServiceImpl.layer
+
   private val userServiceLayer =
-    userRepoLayer >>> UserServiceImpl.layer
+    (userRepoLayer ++ roleRepoLayer ++ permissionRepoLayer) >>> UserServiceImpl.layer
+
+  private val jwtServiceLayer =
+    (jwtConfigLayer ++ tokenRepoLayer ++ userServiceLayer) >>> JwtServiceImpl.layer
+
   private val authServiceLayer =
     (userServiceLayer ++ jwtServiceLayer) >>> AuthServiceImpl.layer
+
   private val accountServiceLayer =
     (accountRepoLayer ++ accountNumberGeneratorLayer) >>> AccountServiceImpl.layer
+
   private val transactionServiceLayer =
     (transactionRepoLayer ++ accountRepoLayer ++ transactorLayer) >>> TransactionServiceImpl.layer
 
   // --- API LAYERS ---
   private val userApiLayer =
-    (authServiceLayer ++ userServiceLayer ++ jwtServiceLayer) >>> UserApi.layer
+    (authServiceLayer ++ userServiceLayer ++ jwtServiceLayer ++ roleServiceLayer ++ permissionServiceLayer) >>> UserApi.layer
   private val bankApiLayer =
     (accountServiceLayer ++ transactionServiceLayer ++ jwtServiceLayer) >>> BankApi.layer
 

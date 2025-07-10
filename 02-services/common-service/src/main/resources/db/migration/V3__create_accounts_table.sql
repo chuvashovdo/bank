@@ -1,6 +1,6 @@
 CREATE TYPE account_status_enum AS ENUM ('OPEN', 'CLOSED', 'FROZEN');
 
-CREATE TABLE IF NOT EXISTS accounts (
+CREATE TABLE IF NOT EXISTS app_accounts (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL,
     account_number VARCHAR(34) NOT NULL UNIQUE,
@@ -12,8 +12,8 @@ CREATE TABLE IF NOT EXISTS accounts (
 
     CONSTRAINT fk_user
         FOREIGN KEY(user_id)
-            REFERENCES users(id)
+            REFERENCES app_users(id)
             ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_accounts_user_id ON accounts(user_id); 
+CREATE INDEX IF NOT EXISTS idx_accounts_user_id ON app_accounts(user_id); 
