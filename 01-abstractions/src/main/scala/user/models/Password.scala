@@ -5,7 +5,6 @@ import io.github.iltotore.iron.*
 import io.github.iltotore.iron.constraint.collection.{ MinLength, MaxLength }
 import zio.json.{ JsonDecoder, JsonEncoder }
 
-// Ограничения для пароля: длина от 8 до 128 символов
 type PasswordConstraint = MinLength[8] & MaxLength[128]
 
 opaque type Password = String :| PasswordConstraint

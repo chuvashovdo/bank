@@ -5,7 +5,6 @@ import io.github.iltotore.iron.*
 import io.github.iltotore.iron.constraint.string.Match
 import zio.json.{ JsonDecoder, JsonEncoder }
 
-// Регулярное выражение для базовой валидации email
 inline private val EmailRegex = """^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,63}$"""
 
 opaque type Email = String :| Match[EmailRegex.type]
