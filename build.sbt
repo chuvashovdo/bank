@@ -1,6 +1,5 @@
 import sbt._
 
-// Версии библиотек
 lazy val versions =
   new {
     val zio =
@@ -45,7 +44,6 @@ ThisBuild / organization := "bank"
 ThisBuild / scalaVersion := "3.6.2"
 ThisBuild / version := "0.1.0-SNAPSHOT"
 
-// Общие настройки SBT для всех пакетов
 ThisBuild / scalacOptions ++= Seq(
   "-Ykind-projector",
   "-language:implicitConversions",
@@ -55,7 +53,6 @@ ThisBuild / scalacOptions ++= Seq(
 
 ThisBuild / parallelExecution := true
 
-// Зависимости по категориям
 lazy val commonDependencies =
   Seq(
     "dev.zio" %% "zio" % versions.zio,
@@ -99,7 +96,6 @@ lazy val h2TestDependency =
     "com.h2database" % "h2" % versions.h2 % Test
   )
 
-// ZIO тестовые зависимости на уровне проекта
 ThisBuild / libraryDependencies ++= Seq(
   "dev.zio" %% "zio-test" % versions.zio % Test,
   "dev.zio" %% "zio-test-sbt" % versions.zio % Test,
@@ -107,10 +103,8 @@ ThisBuild / libraryDependencies ++= Seq(
   "org.scalamock" %% "scalamock" % versions.scalamock % Test,
 )
 
-// Настройка тестового фреймворка для sbt
 ThisBuild / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
 
-// Общие тестовые настройки
 lazy val commonTestSettings =
   Seq(
     Test / fork := true

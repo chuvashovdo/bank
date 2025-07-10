@@ -4,6 +4,10 @@ services:
     container_name: bank-postgres
     env_file:
       - .env
+    environment:
+      POSTGRES_DB: ${DB_DATABASE}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
       - "${DB_PORT}:${DB_PORT}"
     volumes:
@@ -26,6 +30,11 @@ services:
       - "8080:8080"
     env_file:
       - .env
+    environment:
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@bank.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      ADMIN_FIRST_NAME: ${ADMIN_FIRST_NAME:-Admin}
+      ADMIN_LAST_NAME: ${ADMIN_LAST_NAME:-User}
     restart: unless-stopped
 
 volumes:
